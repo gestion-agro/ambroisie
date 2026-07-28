@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Inspection Ambroisie — Belsentes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --ink:#1a2b1f;
+    --paper:#f6f4ee;
+    --line:#2f6b3a;
+    --line-done:#c8501f;
+    --amber:#c98a1f;
+    --panel:#ffffff;
+    --danger:#b23a2e;
+    --muted:#5c6b5f;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--ink);
+    overscroll-behavior:none;
+  }
+  #map{
+    position:fixed;inset:0;
+    z-index:1;
+  }
+
+  /* ---- top bar ---- */
+  #topbar{
+    position:fixed;top:0;left:0;right:0;z-index:1000;
+    background:var(--panel);
+    border-bottom:3px solid var(--ink);
+    padding:10px 14px;
+    display:flex;align-items:center;justify-content:space-between;
+    gap:10px;
+    font-size:14px;
+  }
+  #topbar .title{
+    font-weight:800;
+    color:var(--ink);
+    letter-spacing:-0.01em;
+    display:flex;flex-direction:column;line-height:1.15;
+  }
+  #topbar .title small{
+    font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.03em;text-transform:uppercase;
+  }
+  #status{
+    display:flex;align-items:center;gap:6px;
+    font-weight:700;font-size:12px;
+    padding:5px 10px;border-radius:20px;
+    border:2px solid var(--ink);
+    white-space:nowrap;
+  }
+  #status.ok{background:#e4f0e2;color:var(--line);}
+  #status.wait{background:#fbeecd;color:var(--amber);}
+  #status.err{background:#f6dedb;color:var(--danger);}
+  #status .dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
+  #status.wait .dot{animation:pulse 1.2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+  /* ---- bottom controls ---- */
+  #controls{
+    position:fixed;left:0;right:0;bottom:0;z-index:1000;
+    background:var(--panel);
+    border-top:3px solid var(--ink);
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    display:flex;gap:10px;align-items:center;
+  }
+  button.btn{
+    flex:1;
+    font-size:14px;font-weight:800;
+    border:2px solid var(--ink);
+    border-radius:10px;
+    padding:13px 10px;
+    background:var(--paper);
+    color:var(--ink);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  button.btn:active{transform:translateY(1px);}
+  button.btn.primary{
+    background:var(--line);color:#fff;border-color:var(--line);
+  }
+  button.btn.locate{
+    flex:0 0 52px;
+    padding:13px 0;
+  }
+  button.btn:disabled{opacity:.5;}
+
+  /* ---- legend ---- */
+  #legend{
+    position:fixed;right:12px;top:72px;z-index:1000;
+    background:var(--panel);
+    border:2px solid var(--ink);
+    border-radius:10px;
+    padding:8px 10px;
+    font-size:11px;
+    line-height:1.9;
+    color:var(--ink);
+    box-shadow:2px 2px 0 rgba(0,0,0,.15);
+  }
+  #legend div{display:flex;align-items:center;gap:6px;}
+  #legend .sw{width:16px;height:3px;border-radius:2px;flex:none;}
+
+  /* ---- loading overlay ---- */
+  #loading{
+    position:fixed;inset:0;z-index:2000;
+    background:var(--ink);
+    color:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;text-align:center;padding:30px;
+  }
+  #loading.hidden{display:none;}
+  #loading .spinner{
+    width:36px;height:36px;border-radius:50%;
+    border:4px solid rgba(246,244,238,.25);
+    border-top-color:var(--paper);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loading h2{margin:0;font-size:17px;}
+  #loading p{margin:0;font-size:13px;color:#c8d2c9;max-width:320px;}
+  #loading .err-box{
+    margin-top:6px;background:#3a2320;border:1px solid #6b352b;
+    border-radius:8px;padding:10px 14px;font-size:12px;color:#f6dedb;max-width:340px;
+  }
+  #loading button.btn{margin-top:10px;max-width:220px;}
+
+  .leaflet-control-attribution{font-size:9px;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165</small></div>
+  <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
+</div>
+
+<div id="legend">
+  <div><span class="sw" style="background:var(--line)"></span> Routes communales</div>
+  <div><span class="sw" style="background:var(--line-done)"></span> Trajet parcouru</div>
+</div>
+
+<div id="controls">
+  <button class="btn locate" id="btnCenter" title="Centrer sur ma position">◎</button>
+  <button class="btn primary" id="btnFollow">Suivi activé</button>
+  <button class="btn" id="btnClear">Effacer trace</button>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <h2>Chargement des routes de Belsentes…</h2>
+  <p>Récupération du réseau routier communal depuis OpenStreetMap. Cela prend quelques secondes selon votre connexion.</p>
+  <div id="loadErr" style="display:none" class="err-box"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // Centre approximatif de Belsentes (07165), Ardèche
+  var COMMUNE_CENTER = [44.9341, 4.4877];
+  var COMMUNE_NAME = "Belsentes";
+
+  var map = L.map('map', { zoomControl: true, attributionControl: true })
+    .setView(COMMUNE_CENTER, 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  var roadsLayer = L.layerGroup().addTo(map);
+  var trackLayer = L.layerGroup().addTo(map);
+  var userMarker = null;
+  var accuracyCircle = null;
+  var trackCoords = [];
+  var trackPolyline = null;
+  var following = true;
+  var lastFix = null;
+
+  function setStatus(mode, text){
+    var el = document.getElementById('status');
+    el.className = mode;
+    document.getElementById('statusText').textContent = text;
+  }
+
+  function showLoadError(msg){
+    document.getElementById('loadErr').style.display = 'block';
+    document.getElementById('loadErr').textContent = msg;
+    var box = document.getElementById('loading');
+    var btn = document.createElement('button');
+    btn.className = 'btn primary';
+    btn.textContent = 'Réessayer';
+    btn.onclick = function(){ location.reload(); };
+    box.appendChild(btn);
+  }
+
+  function hideLoading(){
+    document.getElementById('loading').classList.add('hidden');
+  }
+
+  // ---- Charger les routes de la commune via Overpass (OpenStreetMap) ----
+  function loadCommuneRoads(){
+    var query =
+      '[out:json][timeout:30];' +
+      'area["name"="' + COMMUNE_NAME + '"]["boundary"="administrative"]["admin_level"~"8|9"]->.a;' +
+      '(' +
+        'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"](area.a);' +
+      ');' +
+      'out body geom;';
+
+    var endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter'
+    ];
+
+    function tryEndpoint(i){
+      if(i >= endpoints.length){
+        hideLoading();
+        showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
+        return;
+      }
+      fetch(endpoints[i] + '?data=' + encodeURIComponent(query))
+        .then(function(r){
+          if(!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data){
+          drawRoads(data);
+          hideLoading();
+        })
+        .catch(function(err){
+          console.warn('Overpass endpoint failed:', endpoints[i], err);
+          tryEndpoint(i + 1);
+        });
+    }
+    tryEndpoint(0);
+  }
+
+  function roadStyle(highwayType){
+    var w = 4, dash = null, color = '#2f6b3a';
+    if(highwayType === 'unclassified' || highwayType === 'residential'){
+      w = 4;
+    } else if(highwayType === 'tertiary' || highwayType === 'secondary' || highwayType === 'primary'){
+      w = 5;
+    } else if(highwayType === 'track'){
+      w = 3; dash = '2 6';
+    } else if(highwayType === 'service'){
+      w = 3; dash = '1 5';
+    }
+    return { color: color, weight: w, opacity: 0.85, dashArray: dash };
+  }
+
+  var roadBounds = null;
+
+  function drawRoads(osmData){
+    if(!osmData.elements || osmData.elements.length === 0){
+      showLoadError('Aucune route trouvée pour "' + COMMUNE_NAME + '" dans OpenStreetMap. Les limites communales n\'y sont peut-être pas encore renseignées.');
+      return;
+    }
+    var bounds = [];
+    osmData.elements.forEach(function(el){
+      if(el.type !== 'way' || !el.geometry) return;
+      var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
+      var tags = el.tags || {};
+      var style = roadStyle(tags.highway);
+      var line = L.polyline(latlngs, style);
+      var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
+      line.bindPopup('<b>' + label + '</b><br>Type : ' + (tags.highway || '—'));
+      line.addTo(roadsLayer);
+      latlngs.forEach(function(p){ bounds.push(p); });
+    });
+    if(bounds.length){
+      roadBounds = L.latLngBounds(bounds);
+      map.fitBounds(roadBounds, { padding: [30, 30] });
+    }
+  }
+
+  // ---- GPS tracking ----
+  var userIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:18px;height:18px;border-radius:50%;background:#1c6fd9;border:3px solid #fff;box-shadow:0 0 0 2px rgba(28,111,217,.4);"></div>',
+    iconSize: [18,18],
+    iconAnchor: [9,9]
+  });
+
+  function onGpsSuccess(pos){
+    var lat = pos.coords.latitude;
+    var lon = pos.coords.longitude;
+    var acc = pos.coords.accuracy;
+    lastFix = [lat, lon];
+
+    setStatus('ok', 'GPS actif · précision ' + Math.round(acc) + ' m');
+
+    if(!userMarker){
+      userMarker = L.marker([lat, lon], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+    } else {
+      userMarker.setLatLng([lat, lon]);
+    }
+
+    if(!accuracyCircle){
+      accuracyCircle = L.circle([lat, lon], { radius: acc, color:'#1c6fd9', weight:1, fillOpacity:0.08 }).addTo(map);
+    } else {
+      accuracyCircle.setLatLng([lat, lon]);
+      accuracyCircle.setRadius(acc);
+    }
+
+    // trace parcourue
+    trackCoords.push([lat, lon]);
+    if(!trackPolyline){
+      trackPolyline = L.polyline(trackCoords, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
+    } else {
+      trackPolyline.setLatLngs(trackCoords);
+    }
+
+    if(following){
+      map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate:true });
+    }
+  }
+
+  function onGpsError(err){
+    var msg = 'GPS indisponible';
+    if(err.code === 1) msg = 'Accès à la position refusé';
+    else if(err.code === 2) msg = 'Position indisponible';
+    else if(err.code === 3) msg = 'Délai GPS dépassé';
+    setStatus('err', msg);
+  }
+
+  function startGps(){
+    if(!('geolocation' in navigator)){
+      setStatus('err', 'GPS non supporté par ce navigateur');
+      return;
+    }
+    navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 15000
+    });
+  }
+
+  // ---- Controls ----
+  document.getElementById('btnCenter').addEventListener('click', function(){
+    if(lastFix){
+      map.setView(lastFix, 17, { animate:true });
+      following = true;
+      updateFollowBtn();
+    } else if(roadBounds){
+      map.fitBounds(roadBounds, { padding:[30,30] });
+    }
+  });
+
+  var btnFollow = document.getElementById('btnFollow');
+  function updateFollowBtn(){
+    btnFollow.textContent = following ? 'Suivi activé' : 'Suivi coupé';
+    btnFollow.className = following ? 'btn primary' : 'btn';
+  }
+  btnFollow.addEventListener('click', function(){
+    following = !following;
+    updateFollowBtn();
+    if(following && lastFix){ map.setView(lastFix, Math.max(map.getZoom(),16)); }
+  });
+
+  // Couper le suivi auto si l'utilisateur déplace la carte manuellement
+  map.on('dragstart', function(){
+    if(following){ following = false; updateFollowBtn(); }
+  });
+
+  document.getElementById('btnClear').addEventListener('click', function(){
+    if(confirm('Effacer la trace du trajet parcouru ?')){
+      trackCoords = [];
+      if(trackPolyline){ trackLayer.clearLayers(); trackPolyline = null; }
+    }
+  });
+
+  // ---- Boot ----
+  loadCommuneRoads();
+  startGps();
+
+})();
+</script>
+</body>
+</html>
