@@ -684,7 +684,7 @@
   }
 
   // ================= LIMITE COMMUNALE (contour + test dedans/dehors) =================
-  var BOUNDARY_CACHE_KEY = 'ambroisie_boundary_belsentes_v1';
+  var BOUNDARY_CACHE_KEY = 'ambroisie_boundary_belsentes_v2';
   var boundaryLayer = L.layerGroup().addTo(map);
   var communeRings = null; // null tant que non chargé (on autorise par défaut dans ce cas)
 
@@ -729,8 +729,15 @@
   }
 
   function processBoundaryData(osmData){
-    var rel = (osmData.elements || []).find(function(e){ return e.type === 'relation'; });
-    if(!rel || !rel.members) return;
+    var rels = (osmData.elements || []).filter(function(e){ return e.type === 'relation' && e.members; });
+    if(rels.length === 0) return;
+    // Par précaution : si plusieurs relations correspondent (ex: ancienne commune
+    // déléguée avant fusion partageant le même code INSEE), on garde celle avec
+    // le contour le plus étendu, qui correspond à la commune actuelle fusionnée.
+    var rel = rels.reduce(function(best, r){
+      var pts = r.members.reduce(function(sum, m){ return sum + (m.geometry ? m.geometry.length : 0); }, 0);
+      return (!best || pts > best._pts) ? Object.assign({_pts: pts}, r) : best;
+    }, null);
     var segments = rel.members
       .filter(function(m){ return m.role === 'outer' && m.geometry && m.geometry.length > 1; })
       .map(function(m){ return m.geometry.map(function(p){ return [p.lat, p.lon]; }); });
@@ -754,7 +761,7 @@
       }
     } catch(e){ console.warn('Lecture cache contour impossible', e); }
 
-    var query = '[out:json][timeout:40];relation["ref:INSEE"="' + INSEE_CODE + '"]["boundary"="administrative"];out geom;';
+    var query = '[out:json][timeout:40];relation["ref:INSEE"="' + INSEE_CODE + '"]["boundary"="administrative"]["admin_level"="8"];out geom;';
     fetchFromOverpass(query, function(data){
       processBoundaryData(data);
       try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data })); }
