@@ -210,6 +210,7 @@
     box-shadow:1px 2px 3px rgba(0,0,0,.4);
   }
   .signal-icon.done{background:#5c8a5c;}
+  .signal-icon.erreur{background:#8a8a8a;}
 
   /* ---- list ---- */
   .signal-row{
@@ -228,6 +229,7 @@
     text-transform:uppercase;letter-spacing:.03em;
   }
   .status-pill.done{background:#e4f0e2;color:var(--line);}
+  .status-pill.erreur{background:#e6e6e6;color:#666;}
   #btnListToggle{
     position:fixed;left:14px;bottom:88px;z-index:999;
     background:var(--panel);color:var(--ink);
@@ -382,6 +384,7 @@
       <button class="btn primary" id="btnAddUser" style="width:100%;">Créer l'utilisateur</button>
     </div>
     <div class="loginErr" id="accountErr"></div>
+    <button class="btn" id="btnLogout" style="width:100%;margin-top:16px;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Déconnexion</button>
   </div>
 </div>
 
@@ -892,14 +895,16 @@
     });
   }
 
+  var trackSyncIntervalId = null;
+
   function startTrackSync(){
     syncTracks();
-    setInterval(syncTracks, TRACK_SYNC_INTERVAL);
+    trackSyncIntervalId = setInterval(syncTracks, TRACK_SYNC_INTERVAL);
   }
 
   async function initAuth(){
-    var savedUser = sessionStorage.getItem('ambroisie_user');
-    var savedRole = sessionStorage.getItem('ambroisie_role');
+    var savedUser = localStorage.getItem('ambroisie_user');
+    var savedRole = localStorage.getItem('ambroisie_role');
 
     // Charger la liste des comptes ; si elle n'existe pas encore, créer le compte admin par défaut
     try{
@@ -941,10 +946,23 @@
 
     currentUser = found.username;
     currentRole = found.role;
-    sessionStorage.setItem('ambroisie_user', currentUser);
-    sessionStorage.setItem('ambroisie_role', currentRole);
+    localStorage.setItem('ambroisie_user', currentUser);
+    localStorage.setItem('ambroisie_role', currentRole);
     document.getElementById('loginScreen').classList.add('hidden');
     setupAccountUI();
+  }
+
+  function logout(){
+    localStorage.removeItem('ambroisie_user');
+    localStorage.removeItem('ambroisie_role');
+    if(trackSyncIntervalId){ clearInterval(trackSyncIntervalId); trackSyncIntervalId = null; }
+    currentUser = null;
+    currentRole = null;
+    document.getElementById('accountModal').classList.add('hidden');
+    document.getElementById('loginName').value = '';
+    document.getElementById('loginPass').value = '';
+    document.getElementById('loginErr').textContent = '';
+    document.getElementById('loginScreen').classList.remove('hidden');
   }
 
   // ================= COMPTE / ADMIN =================
@@ -965,6 +983,12 @@
   });
   document.getElementById('btnCancelAccount').addEventListener('click', function(){
     document.getElementById('accountModal').classList.add('hidden');
+  });
+
+  document.getElementById('btnLogout').addEventListener('click', function(){
+    if(confirm('Se déconnecter ? Vous devrez ressaisir votre identifiant et mot de passe.')){
+      logout();
+    }
   });
 
   document.getElementById('btnChangePassword').addEventListener('click', async function(){
@@ -1092,10 +1116,11 @@
   var signalMarkersLayer = L.layerGroup();
   var pendingReportCoords = null;
 
-  function signalIcon(done){
+  function signalIcon(status){
+    var cls = status === 'traite' ? ' done' : (status === 'erreur' ? ' erreur' : '');
     return L.divIcon({
       className: '',
-      html: '<div class="signal-icon' + (done ? ' done' : '') + '"></div>',
+      html: '<div class="signal-icon' + cls + '"></div>',
       iconSize: [26,26],
       iconAnchor: [13,26]
     });
@@ -1104,7 +1129,10 @@
   function renderSignalMarkers(){
     signalMarkersLayer.clearLayers();
     signalements.forEach(function(s){
-      var m = L.marker([s.lat, s.lon], { icon: signalIcon(s.status === 'traite') });
+      // Les signalements marqués "erreur" (faux positif) sont masqués de la carte,
+      // mais restent consultables dans l'onglet dédié de la liste.
+      if(s.status === 'erreur') return;
+      var m = L.marker([s.lat, s.lon], { icon: signalIcon(s.status) });
       var popupHtml = '<b>' + escapeHtml(s.name || 'Conseiller') + '</b><br>' +
         new Date(s.date).toLocaleString('fr-FR') +
         (s.note ? '<br>' + escapeHtml(s.note) : '') +
@@ -1188,28 +1216,49 @@
   });
 
   // ================= LISTE DES SIGNALEMENTS =================
+  var listShowErrors = false;
+
   function renderList(){
     var content = document.getElementById('listContent');
-    document.getElementById('listCount').textContent = signalements.length;
-    if(signalements.length === 0){
-      content.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>';
+    var activeCount = signalements.filter(function(s){ return s.status !== 'erreur'; }).length;
+    var errorCount = signalements.length - activeCount;
+    document.getElementById('listCount').textContent = activeCount;
+
+    var toggleBar = '<div style="margin-bottom:10px;">' +
+      '<button class="btn" id="btnToggleErrors" style="font-size:12px;padding:7px 10px;">' +
+        (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
+      '</button></div>';
+
+    var visible = signalements.filter(function(s){ return listShowErrors || s.status !== 'erreur'; });
+
+    if(visible.length === 0){
+      content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>';
+      wireToggleErrorsButton();
       return;
     }
-    var sorted = signalements.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
-    content.innerHTML = sorted.map(function(s){
+    var sorted = visible.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    content.innerHTML = toggleBar + sorted.map(function(s){
       var isDone = s.status === 'traite';
+      var isErreur = s.status === 'erreur';
+      var pillClass = isDone ? ' done' : (isErreur ? ' erreur' : '');
+      var pillLabel = isDone ? 'Traité' : (isErreur ? 'Signalement erroné' : 'À traiter');
+      var canDelete = currentRole === 'admin';
       return '<div class="signal-row">' +
-        '<span class="status-pill' + (isDone ? ' done' : '') + '">' + (isDone ? 'Traité' : 'À traiter') + '</span>' +
+        '<span class="status-pill' + pillClass + '">' + pillLabel + '</span>' +
         '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
         '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
         (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
         (s.photo ? '<img src="' + s.photo + '">' : '') +
         '<div class="row-actions">' +
-          '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:12px;">Voir sur la carte</button>' +
-          '<button class="btn" data-toggle="' + s.id + '" style="flex:1;padding:8px;font-size:12px;">' + (isDone ? 'Marquer à traiter' : 'Marquer traité') + '</button>' +
+          '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+          (!isErreur ? '<button class="btn" data-toggle="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isDone ? 'À traiter' : 'Traité') + '</button>' : '') +
+          '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
+          (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
         '</div>' +
       '</div>';
     }).join('');
+
+    wireToggleErrorsButton();
 
     content.querySelectorAll('[data-goto]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -1234,6 +1283,38 @@
         }
       });
     });
+    content.querySelectorAll('[data-erreur]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-erreur');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.status = s.status === 'erreur' ? 'a_traiter' : 'erreur';
+          renderSignalMarkers();
+          renderList();
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-delete]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-delete');
+        if(!confirm('Supprimer définitivement ce signalement ? Cette action est irréversible.')) return;
+        signalements = signalements.filter(function(x){ return x.id !== id; });
+        renderSignalMarkers();
+        renderList();
+        saveSignalements();
+      });
+    });
+  }
+
+  function wireToggleErrorsButton(){
+    var btn = document.getElementById('btnToggleErrors');
+    if(btn){
+      btn.addEventListener('click', function(){
+        listShowErrors = !listShowErrors;
+        renderList();
+      });
+    }
   }
 
   document.getElementById('btnListToggle').addEventListener('click', function(){
