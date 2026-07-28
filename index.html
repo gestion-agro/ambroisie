@@ -304,7 +304,8 @@
 
 <div id="legend">
   <div><span class="sw" style="background:var(--line)"></span> Routes communales</div>
-  <div><span class="sw" style="background:var(--line-done)"></span> Trajet parcouru</div>
+  <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
+  <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
 </div>
 
 <button id="btnListToggle" title="Liste des signalements">☰</button>
@@ -420,12 +421,30 @@
 
   var roadsLayer = L.layerGroup().addTo(map);
   var trackLayer = L.layerGroup().addTo(map);
+  var otherTracksLayer = L.layerGroup().addTo(map);
   var userMarker = null;
   var accuracyCircle = null;
   var trackCoords = [];
   var trackPolyline = null;
   var following = true;
   var lastFix = null;
+
+  // Trace partagée : version simplifiée envoyée aux autres conseillers
+  var sharedTrackPoints = [];
+  var lastSharedPoint = null;
+  var lastSyncedPointCount = 0;
+  var SHARE_MIN_DISTANCE = 15; // mètres — n'envoie un nouveau point que si on a bougé d'au moins cette distance
+  var TRACK_SYNC_INTERVAL = 45000; // 45s
+
+  function haversineMeters(lat1, lon1, lat2, lon2){
+    var R = 6371000;
+    var toRad = function(d){ return d * Math.PI / 180; };
+    var dLat = toRad(lat2 - lat1);
+    var dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
 
   function setStatus(mode, text){
     var el = document.getElementById('status');
@@ -449,13 +468,15 @@
   }
 
   // ---- Charger les routes de la commune via Overpass (OpenStreetMap) ----
-  var CACHE_KEY = 'ambroisie_routes_belsentes_v1';
+  var CACHE_KEY = 'ambroisie_routes_belsentes_v2';
   var CACHE_MAX_AGE_DAYS = 90;
 
-  // Boîte englobante fixe autour de Belsentes (07165) — beaucoup plus rapide
-  // pour Overpass qu'une recherche par nom, qui doit d'abord résoudre les
-  // limites administratives avant de chercher les routes dedans.
-  // Marge confortable autour du centre de la commune (~26 km²).
+  // Code INSEE de Belsentes — permet d'interroger Overpass sur le contour
+  // administratif RÉEL de la commune plutôt qu'un simple rectangle, qui
+  // débordait sur les communes voisines.
+  var INSEE_CODE = "07165";
+  // Boîte englobante de secours, utilisée uniquement si la requête par
+  // contour administratif échoue ou ne renvoie rien (ex: tag manquant dans OSM).
   var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
 
   function loadCommuneRoads(){
@@ -469,7 +490,7 @@
           drawRoads(parsed.data);
           hideLoading();
           // Rafraîchir en arrière-plan sans bloquer l'utilisateur
-          fetchFromOverpass(function(data){
+          loadRoadsData(function(data){
             roadsLayer.clearLayers();
             drawRoads(data);
             saveCache(data);
@@ -496,7 +517,7 @@
       }
     }, 12000);
 
-    fetchFromOverpass(function(data){
+    loadRoadsData(function(data){
       clearTimeout(skipTimer);
       drawRoads(data);
       saveCache(data);
@@ -508,19 +529,46 @@
     });
   }
 
+  // Essaie d'abord le contour administratif précis (code INSEE) ; si ça échoue
+  // ou ne renvoie aucune route, se replie sur la boîte englobante (moins précis
+  // mais garantit un affichage).
+  function loadRoadsData(onSuccess, onFail){
+    var queryInsee =
+      '[out:json][timeout:25];' +
+      'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
+      'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+      'out body geom;';
+
+    fetchFromOverpass(queryInsee, function(data){
+      if(data.elements && data.elements.length > 0){
+        onSuccess(data);
+      } else {
+        console.warn('Contour INSEE introuvable ou vide dans OSM, repli sur la boîte englobante.');
+        var queryBbox =
+          '[out:json][timeout:25]' +
+          '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+          'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+          'out body geom;';
+        fetchFromOverpass(queryBbox, onSuccess, onFail);
+      }
+    }, function(){
+      // La requête INSEE elle-même a échoué (réseau/serveur) : on tente quand même la bbox
+      var queryBbox =
+        '[out:json][timeout:25]' +
+        '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+        'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+        'out body geom;';
+      fetchFromOverpass(queryBbox, onSuccess, onFail);
+    });
+  }
+
   function saveCache(data){
     try{
       localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data }));
     } catch(e){ console.warn('Sauvegarde cache impossible', e); }
   }
 
-  function fetchFromOverpass(onSuccess, onFail){
-    var query =
-      '[out:json][timeout:25]' +
-      '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
-      'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
-      'out body geom;';
-
+  function fetchFromOverpass(query, onSuccess, onFail){
     var endpoints = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
@@ -620,12 +668,18 @@
       accuracyCircle.setRadius(acc);
     }
 
-    // trace parcourue
+    // trace parcourue (affichage local, tous les points)
     trackCoords.push([lat, lon]);
     if(!trackPolyline){
       trackPolyline = L.polyline(trackCoords, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
     } else {
       trackPolyline.setLatLngs(trackCoords);
+    }
+
+    // trace partagée (envoyée aux autres conseillers, simplifiée par distance)
+    if(!lastSharedPoint || haversineMeters(lastSharedPoint[0], lastSharedPoint[1], lat, lon) > SHARE_MIN_DISTANCE){
+      sharedTrackPoints.push([lat, lon]);
+      lastSharedPoint = [lat, lon];
     }
 
     if(following){
@@ -756,6 +810,68 @@
     .then(function(data){ usersSha = data.sha; });
   }
 
+  // ================= TRACÉS PARTAGÉS (voir où les autres sont passés) =================
+  function tracksApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/tracks'); }
+
+  async function syncTracks(){
+    if(!currentUser) return;
+    try{
+      var resp = await fetch(tracksApiUrl(), {
+        method: 'GET',
+        headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+      });
+      if(!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      var tracks = data.items || [];
+      var sha = data.sha || null;
+
+      // Si on a de nouveaux points à partager, on met à jour notre entrée
+      if(sharedTrackPoints.length > lastSyncedPointCount){
+        var mine = tracks.find(function(t){ return t.username === currentUser; });
+        if(mine){
+          mine.points = sharedTrackPoints;
+          mine.updatedAt = new Date().toISOString();
+        } else {
+          tracks.push({ username: currentUser, points: sharedTrackPoints.slice(), updatedAt: new Date().toISOString() });
+        }
+        var putResp = await fetch(tracksApiUrl(), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
+          body: JSON.stringify({ items: tracks, sha: sha })
+        });
+        if(putResp.ok){
+          lastSyncedPointCount = sharedTrackPoints.length;
+        }
+      }
+
+      renderOtherTracks(tracks);
+    } catch(e){
+      console.warn('Erreur synchronisation des tracés', e);
+    }
+  }
+
+  var TRACK_COLORS = ['#1c6fd9', '#7a4fd1', '#c98a1f', '#2f9e8f', '#d1477a', '#5c8a5c'];
+
+  function renderOtherTracks(tracks){
+    otherTracksLayer.clearLayers();
+    var idx = 0;
+    tracks.forEach(function(t){
+      if(t.username === currentUser) return;
+      if(!t.points || t.points.length < 2) return;
+      var color = TRACK_COLORS[idx % TRACK_COLORS.length];
+      idx++;
+      var line = L.polyline(t.points, { color: color, weight: 4, opacity: 0.65, dashArray: '6 6' });
+      var lastSeen = t.updatedAt ? new Date(t.updatedAt).toLocaleTimeString('fr-FR') : '';
+      line.bindTooltip(escapeHtml(t.username) + (lastSeen ? ' · vu ' + lastSeen : ''), { sticky: true });
+      line.addTo(otherTracksLayer);
+    });
+  }
+
+  function startTrackSync(){
+    syncTracks();
+    setInterval(syncTracks, TRACK_SYNC_INTERVAL);
+  }
+
   async function initAuth(){
     var savedUser = sessionStorage.getItem('ambroisie_user');
     var savedRole = sessionStorage.getItem('ambroisie_role');
@@ -811,6 +927,7 @@
     document.getElementById('accountWhoami').textContent = currentUser + (currentRole === 'admin' ? ' (administrateur)' : '');
     document.getElementById('adminSection').style.display = currentRole === 'admin' ? 'block' : 'none';
     if(currentRole === 'admin') renderUserList();
+    startTrackSync();
   }
 
   document.getElementById('btnAccount').addEventListener('click', function(){
