@@ -155,7 +155,7 @@
 <div id="loading">
   <div class="spinner"></div>
   <h2>Chargement des routes de Belsentes…</h2>
-  <p>Récupération du réseau routier communal depuis OpenStreetMap. Cela prend quelques secondes selon votre connexion.</p>
+  <p>Récupération du réseau routier communal depuis OpenStreetMap (10 à 20 secondes en général). Une fois chargées, les routes seront mises en cache et s'afficheront instantanément la prochaine fois.</p>
   <div id="loadErr" style="display:none" class="err-box"></div>
 </div>
 
@@ -207,13 +207,76 @@
   }
 
   // ---- Charger les routes de la commune via Overpass (OpenStreetMap) ----
+  var CACHE_KEY = 'ambroisie_routes_belsentes_v1';
+  var CACHE_MAX_AGE_DAYS = 90;
+
+  // Boîte englobante fixe autour de Belsentes (07165) — beaucoup plus rapide
+  // pour Overpass qu'une recherche par nom, qui doit d'abord résoudre les
+  // limites administratives avant de chercher les routes dedans.
+  // Marge confortable autour du centre de la commune (~26 km²).
+  var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
+
   function loadCommuneRoads(){
+    // 1) Essayer le cache local d'abord — instantané, fonctionne hors ligne
+    try{
+      var cached = localStorage.getItem(CACHE_KEY);
+      if(cached){
+        var parsed = JSON.parse(cached);
+        var ageDays = (Date.now() - parsed.savedAt) / (1000*60*60*24);
+        if(ageDays < CACHE_MAX_AGE_DAYS){
+          drawRoads(parsed.data);
+          hideLoading();
+          // Rafraîchir en arrière-plan sans bloquer l'utilisateur
+          fetchFromOverpass(function(data){
+            roadsLayer.clearLayers();
+            drawRoads(data);
+            saveCache(data);
+          }, function(){ /* échec silencieux, on garde le cache */ });
+          return;
+        }
+      }
+    } catch(e){ console.warn('Lecture cache impossible', e); }
+
+    // 2) Pas de cache valide : télécharger, avec timeout et bouton d'échappement
+    var skipTimer = setTimeout(function(){
+      var box = document.getElementById('loading');
+      if(box.classList.contains('hidden')) return;
+      var p = document.getElementById('loadErr');
+      p.style.display = 'block';
+      p.textContent = 'Ça prend plus de temps que prévu (connexion lente ou serveur chargé).';
+      if(!document.getElementById('btnSkip')){
+        var skipBtn = document.createElement('button');
+        skipBtn.id = 'btnSkip';
+        skipBtn.className = 'btn';
+        skipBtn.textContent = 'Continuer sans les routes pour l\'instant';
+        skipBtn.onclick = hideLoading;
+        box.appendChild(skipBtn);
+      }
+    }, 12000);
+
+    fetchFromOverpass(function(data){
+      clearTimeout(skipTimer);
+      drawRoads(data);
+      saveCache(data);
+      hideLoading();
+    }, function(){
+      clearTimeout(skipTimer);
+      hideLoading();
+      showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
+    });
+  }
+
+  function saveCache(data){
+    try{
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data }));
+    } catch(e){ console.warn('Sauvegarde cache impossible', e); }
+  }
+
+  function fetchFromOverpass(onSuccess, onFail){
     var query =
-      '[out:json][timeout:30];' +
-      'area["name"="' + COMMUNE_NAME + '"]["boundary"="administrative"]["admin_level"~"8|9"]->.a;' +
-      '(' +
-        'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"](area.a);' +
-      ');' +
+      '[out:json][timeout:25]' +
+      '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+      'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
       'out body geom;';
 
     var endpoints = [
@@ -222,21 +285,18 @@
     ];
 
     function tryEndpoint(i){
-      if(i >= endpoints.length){
-        hideLoading();
-        showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
-        return;
-      }
-      fetch(endpoints[i] + '?data=' + encodeURIComponent(query))
+      if(i >= endpoints.length){ onFail(); return; }
+      var controller = new AbortController();
+      var to = setTimeout(function(){ controller.abort(); }, 20000);
+      fetch(endpoints[i] + '?data=' + encodeURIComponent(query), { signal: controller.signal })
         .then(function(r){
+          clearTimeout(to);
           if(!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
-        .then(function(data){
-          drawRoads(data);
-          hideLoading();
-        })
+        .then(function(data){ onSuccess(data); })
         .catch(function(err){
+          clearTimeout(to);
           console.warn('Overpass endpoint failed:', endpoints[i], err);
           tryEndpoint(i + 1);
         });
@@ -259,10 +319,11 @@
   }
 
   var roadBounds = null;
+  var hasCenteredOnce = false;
 
   function drawRoads(osmData){
     if(!osmData.elements || osmData.elements.length === 0){
-      showLoadError('Aucune route trouvée pour "' + COMMUNE_NAME + '" dans OpenStreetMap. Les limites communales n\'y sont peut-être pas encore renseignées.');
+      showLoadError('Aucune route trouvée autour de Belsentes dans OpenStreetMap pour le moment.');
       return;
     }
     var bounds = [];
@@ -279,7 +340,10 @@
     });
     if(bounds.length){
       roadBounds = L.latLngBounds(bounds);
-      map.fitBounds(roadBounds, { padding: [30, 30] });
+      if(!hasCenteredOnce){
+        map.fitBounds(roadBounds, { padding: [30, 30] });
+        hasCenteredOnce = true;
+      }
     }
   }
 
