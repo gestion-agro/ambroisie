@@ -1038,8 +1038,10 @@
       return;
     }
     content.innerHTML = pending.map(function(r){
+      var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
       return '<div class="citizen-row">' +
-        '<div class="meta">' + new Date(r.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(r.firstName || 'Anonyme') + '</div>' +
+        '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
+        '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
         '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
         (r.photo ? '<img src="' + r.photo + '">' : '') +
         '<div class="row-actions">' +
@@ -1066,11 +1068,12 @@
         var r = citizenReports.find(function(x){ return x.id === id; });
         if(!r) return;
         var qtyLabel = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' }[r.quantity] || r.quantity;
+        var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
         var entry = {
           id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
           lat: r.lat,
           lon: r.lon,
-          name: (r.firstName || 'Anonyme') + ' (signalement citoyen)',
+          name: fullName + ' (signalement citoyen ' + (r.refNumber || '') + ')',
           note: 'Quantité estimée : ' + qtyLabel,
           photo: r.photo || null,
           date: r.date,
