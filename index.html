@@ -590,6 +590,7 @@
   var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
 
   function loadCommuneRoads(){
+    var staleCache = null;
     // 1) Essayer le cache local d'abord — instantané, fonctionne hors ligne
     try{
       var cached = localStorage.getItem(CACHE_KEY);
@@ -607,6 +608,9 @@
           }, function(){ /* échec silencieux, on garde le cache */ });
           return;
         }
+        // Cache périmé mais gardé de côté : mieux qu'une carte vide si le
+        // réseau échoue totalement pour la nouvelle tentative ci-dessous.
+        staleCache = parsed.data;
       }
     } catch(e){ console.warn('Lecture cache impossible', e); }
 
@@ -635,7 +639,12 @@
     }, function(){
       clearTimeout(skipTimer);
       hideLoading();
-      showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
+      if(staleCache){
+        console.warn('Réseau indisponible : affichage des routes en cache (peut-être périmées).');
+        drawRoads(staleCache);
+      } else {
+        showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
+      }
     });
   }
 
@@ -750,6 +759,7 @@
   }
 
   function loadCommuneBoundary(){
+    var staleBoundary = null;
     try{
       var cached = localStorage.getItem(BOUNDARY_CACHE_KEY);
       if(cached){
@@ -757,6 +767,8 @@
         var ageDays = (Date.now() - parsed.savedAt) / (1000*60*60*24);
         if(ageDays < 180){
           processBoundaryData(parsed.data);
+        } else {
+          staleBoundary = parsed.data;
         }
       }
     } catch(e){ console.warn('Lecture cache contour impossible', e); }
@@ -767,7 +779,12 @@
       try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data })); }
       catch(e){ console.warn('Sauvegarde cache contour impossible', e); }
     }, function(){
-      console.warn('Impossible de charger le contour communal (limite non affichée, vérification dedans/dehors désactivée).');
+      if(staleBoundary){
+        console.warn('Réseau indisponible : affichage du contour en cache (peut-être périmé).');
+        processBoundaryData(staleBoundary);
+      } else {
+        console.warn('Impossible de charger le contour communal (limite non affichée, vérification dedans/dehors désactivée).');
+      }
     }, 40000);
   }
 
