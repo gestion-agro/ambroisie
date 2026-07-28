@@ -368,12 +368,13 @@
 </div>
 
 <div id="legend">
-  <div><span class="sw" style="background:#2f6b3a"></span> Communale (RC)</div>
+  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsVisible" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
   <div><span class="sw" style="background:#c9781f"></span> Départementale (RD)</div>
   <div><span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</div>
   <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
   <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
   <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
+  <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
 </div>
 
 <button id="btnListToggle" title="Liste des signalements">☰</button>
@@ -1826,6 +1827,32 @@
       loadSignalements(true);
       syncTracks();
     }
+  });
+
+  // ---- Affichage/masquage et rechargement manuel des routes ----
+  document.getElementById('chkRoadsVisible').addEventListener('change', function(e){
+    if(e.target.checked){
+      map.addLayer(roadsLayer);
+    } else {
+      map.removeLayer(roadsLayer);
+    }
+  });
+
+  document.getElementById('btnReloadRoads').addEventListener('click', function(){
+    var btn = document.getElementById('btnReloadRoads');
+    btn.disabled = true;
+    btn.textContent = 'Chargement…';
+    loadRoadsData(function(data){
+      roadsLayer.clearLayers();
+      drawRoads(data);
+      saveCache(data);
+      btn.disabled = false;
+      btn.textContent = '↻ Recharger les routes';
+    }, function(){
+      btn.disabled = false;
+      btn.textContent = '↻ Recharger les routes';
+      alert('Toujours impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.');
+    });
   });
 
   // ---- Boot ----
