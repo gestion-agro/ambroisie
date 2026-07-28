@@ -174,12 +174,12 @@
   #btnReport:active{transform:translateY(1px);}
 
   /* ---- report modal ---- */
-  #reportModal, #listModal{
+  #reportModal, #listModal, #accountModal{
     position:fixed;inset:0;z-index:2500;
     background:rgba(20,25,20,.55);
     display:flex;align-items:flex-end;justify-content:center;
   }
-  #reportModal.hidden, #listModal.hidden{display:none;}
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden{display:none;}
   .sheet{
     width:100%;max-width:480px;
     background:var(--panel);
@@ -238,6 +238,24 @@
     box-shadow:2px 3px 0 rgba(0,0,0,.2);
     cursor:pointer;
   }
+  #btnAccount{
+    position:fixed;left:14px;bottom:150px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:44px;height:44px;
+    font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  .user-row{
+    display:flex;align-items:center;justify-content:space-between;
+    border:1px solid #ddd;border-radius:8px;
+    padding:8px 10px;margin-bottom:6px;font-size:13px;
+  }
+  .user-row .role-tag{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;}
+  .user-row button{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--danger);color:var(--danger);background:#fff;}
   #syncBadge{
     position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:1500;
     background:var(--ink);color:var(--paper);
@@ -253,7 +271,7 @@
 <div id="loginScreen">
   <h1>🌿 Inspection Ambroisie</h1>
   <p>Belsentes (07165) — accès réservé aux conseillers</p>
-  <input type="text" id="loginName" placeholder="Votre nom" autocomplete="off">
+  <input type="text" id="loginName" placeholder="Identifiant" autocomplete="off">
   <input type="password" id="loginPass" placeholder="Mot de passe" autocomplete="off" class="nameField">
   <button id="btnLogin">Entrer</button>
   <div class="loginErr" id="loginErr"></div>
@@ -313,6 +331,40 @@
   </div>
 </div>
 
+<button id="btnAccount" title="Mon compte">👤</button>
+
+<div id="accountModal" class="hidden">
+  <div class="sheet">
+    <h3>Mon compte</h3>
+    <div class="field">
+      <label>Identifiant connecté</label>
+      <div id="accountWhoami" style="font-size:14px;font-weight:700"></div>
+    </div>
+    <div class="field">
+      <label>Nouveau mot de passe</label>
+      <input type="text" id="newPassword" placeholder="Nouveau mot de passe">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCancelAccount">Annuler</button>
+      <button class="btn primary" id="btnChangePassword">Changer mon mot de passe</button>
+    </div>
+    <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
+      <h3>Gérer les utilisateurs (admin)</h3>
+      <div id="userListContent"></div>
+      <div class="field" style="margin-top:14px;">
+        <label>Nouvel identifiant</label>
+        <input type="text" id="newUserName" placeholder="ex: jdupont">
+      </div>
+      <div class="field">
+        <label>Mot de passe initial</label>
+        <input type="text" id="newUserPass" placeholder="mot de passe temporaire">
+      </div>
+      <button class="btn primary" id="btnAddUser" style="width:100%;">Créer l'utilisateur</button>
+    </div>
+    <div class="loginErr" id="accountErr"></div>
+  </div>
+</div>
+
 <div id="controls">
   <button class="btn locate" id="btnCenter" title="Centrer sur ma position">◎</button>
   <button class="btn primary" id="btnFollow">Suivi activé</button>
@@ -334,8 +386,7 @@
   // ================= CONFIGURATION À REMPLIR =================
   var CONFIG = {
     WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements",
-    APP_SECRET: "belsentes-secret-2026",   // doit être IDENTIQUE au secret APP_SECRET mis dans le Worker Cloudflare
-    APP_PASSWORD: "ambroisie07"            // mot de passe partagé, à changer
+    APP_SECRET: "belsentes-secret-2026"   // doit être IDENTIQUE au secret APP_SECRET mis dans le Worker Cloudflare
   };
   // ==============================================================
 
@@ -618,14 +669,80 @@
     }
   });
 
-  // ================= AUTHENTIFICATION =================
-  var currentUser = null;
+  // ================= AUTHENTIFICATION MULTI-COMPTES =================
+  var currentUser = null;   // identifiant connecté
+  var currentRole = null;   // 'admin' ou 'user'
+  var users = [];           // [{username, passwordHash, role}]
+  var usersSha = null;
 
-  function initAuth(){
+  var DEFAULT_ADMIN_USERNAME = 'clement.thieuleux';
+  var DEFAULT_ADMIN_PASSWORD = 'azerty';
+
+  async function sha256Hex(text){
+    var enc = new TextEncoder().encode(text);
+    var buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(function(b){
+      return b.toString(16).padStart(2,'0');
+    }).join('');
+  }
+
+  function usersApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/users'); }
+
+  function fetchUsers(){
+    return fetch(usersApiUrl(), {
+      method: 'GET',
+      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      users = data.items || [];
+      usersSha = data.sha || null;
+      return users;
+    });
+  }
+
+  function saveUsers(){
+    return fetch(usersApiUrl(), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Secret': CONFIG.APP_SECRET
+      },
+      body: JSON.stringify({ items: users, sha: usersSha })
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){ usersSha = data.sha; });
+  }
+
+  async function initAuth(){
     var savedUser = sessionStorage.getItem('ambroisie_user');
-    if(savedUser){
+    var savedRole = sessionStorage.getItem('ambroisie_role');
+
+    // Charger la liste des comptes ; si elle n'existe pas encore, créer le compte admin par défaut
+    try{
+      await fetchUsers();
+      if(users.length === 0){
+        var hash = await sha256Hex(DEFAULT_ADMIN_PASSWORD);
+        users = [{ username: DEFAULT_ADMIN_USERNAME, passwordHash: hash, role: 'admin' }];
+        await saveUsers();
+      }
+    } catch(e){
+      console.error('Erreur chargement comptes', e);
+      document.getElementById('loginErr').textContent =
+        'Impossible de contacter le serveur de comptes. Vérifiez votre connexion.';
+    }
+
+    if(savedUser && savedRole){
       currentUser = savedUser;
+      currentRole = savedRole;
       document.getElementById('loginScreen').classList.add('hidden');
+      setupAccountUI();
       return;
     }
     document.getElementById('btnLogin').addEventListener('click', tryLogin);
@@ -634,16 +751,101 @@
     });
   }
 
-  function tryLogin(){
+  async function tryLogin(){
     var name = document.getElementById('loginName').value.trim();
     var pass = document.getElementById('loginPass').value;
     var err = document.getElementById('loginErr');
-    if(!name){ err.textContent = 'Merci d\'indiquer votre nom.'; return; }
-    if(pass !== CONFIG.APP_PASSWORD){ err.textContent = 'Mot de passe incorrect.'; return; }
-    currentUser = name;
-    sessionStorage.setItem('ambroisie_user', name);
+    err.textContent = '';
+    if(!name || !pass){ err.textContent = 'Identifiant et mot de passe requis.'; return; }
+
+    var hash = await sha256Hex(pass);
+    var found = users.find(function(u){ return u.username === name && u.passwordHash === hash; });
+    if(!found){ err.textContent = 'Identifiant ou mot de passe incorrect.'; return; }
+
+    currentUser = found.username;
+    currentRole = found.role;
+    sessionStorage.setItem('ambroisie_user', currentUser);
+    sessionStorage.setItem('ambroisie_role', currentRole);
     document.getElementById('loginScreen').classList.add('hidden');
+    setupAccountUI();
   }
+
+  // ================= COMPTE / ADMIN =================
+  function setupAccountUI(){
+    document.getElementById('accountWhoami').textContent = currentUser + (currentRole === 'admin' ? ' (administrateur)' : '');
+    document.getElementById('adminSection').style.display = currentRole === 'admin' ? 'block' : 'none';
+    if(currentRole === 'admin') renderUserList();
+  }
+
+  document.getElementById('btnAccount').addEventListener('click', function(){
+    document.getElementById('accountErr').textContent = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newUserName').value = '';
+    document.getElementById('newUserPass').value = '';
+    if(currentRole === 'admin') renderUserList();
+    document.getElementById('accountModal').classList.remove('hidden');
+  });
+  document.getElementById('btnCancelAccount').addEventListener('click', function(){
+    document.getElementById('accountModal').classList.add('hidden');
+  });
+
+  document.getElementById('btnChangePassword').addEventListener('click', async function(){
+    var np = document.getElementById('newPassword').value;
+    var err = document.getElementById('accountErr');
+    if(!np || np.length < 4){ err.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
+    var me = users.find(function(u){ return u.username === currentUser; });
+    if(!me){ err.textContent = 'Compte introuvable.'; return; }
+    me.passwordHash = await sha256Hex(np);
+    try{
+      await saveUsers();
+      err.style.color = 'var(--line)';
+      err.textContent = 'Mot de passe mis à jour.';
+    } catch(e){
+      err.style.color = '';
+      err.textContent = 'Erreur lors de l\'enregistrement.';
+    }
+  });
+
+  function renderUserList(){
+    var box = document.getElementById('userListContent');
+    box.innerHTML = users.map(function(u){
+      var canDelete = u.username !== currentUser && !(u.role === 'admin' && users.filter(function(x){return x.role==='admin';}).length <= 1);
+      return '<div class="user-row">' +
+        '<span>' + escapeHtml(u.username) + ' <span class="role-tag">' + (u.role === 'admin' ? 'Admin' : 'Conseiller') + '</span></span>' +
+        (canDelete ? '<button data-del="' + escapeHtml(u.username) + '">Supprimer</button>' : '') +
+      '</div>';
+    }).join('');
+    box.querySelectorAll('[data-del]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var uname = btn.getAttribute('data-del');
+        if(!confirm('Supprimer l\'utilisateur ' + uname + ' ?')) return;
+        users = users.filter(function(u){ return u.username !== uname; });
+        try{ await saveUsers(); renderUserList(); }
+        catch(e){ alert('Erreur lors de la suppression.'); }
+      });
+    });
+  }
+
+  document.getElementById('btnAddUser').addEventListener('click', async function(){
+    var uname = document.getElementById('newUserName').value.trim();
+    var upass = document.getElementById('newUserPass').value;
+    var err = document.getElementById('accountErr');
+    if(!uname || !upass){ err.textContent = 'Identifiant et mot de passe requis.'; return; }
+    if(users.find(function(u){ return u.username === uname; })){ err.textContent = 'Cet identifiant existe déjà.'; return; }
+    var hash = await sha256Hex(upass);
+    users.push({ username: uname, passwordHash: hash, role: 'user' });
+    try{
+      await saveUsers();
+      document.getElementById('newUserName').value = '';
+      document.getElementById('newUserPass').value = '';
+      err.style.color = 'var(--line)';
+      err.textContent = 'Utilisateur créé.';
+      renderUserList();
+    } catch(e){
+      err.style.color = '';
+      err.textContent = 'Erreur lors de la création.';
+    }
+  });
 
   // ================= STOCKAGE PARTAGÉ (via Cloudflare Worker) =================
   var signalements = [];
@@ -669,7 +871,7 @@
       return r.json();
     })
     .then(function(data){
-      signalements = data.signalements || [];
+      signalements = data.items || [];
       ghFileSha = data.sha || null;
       renderSignalMarkers();
       renderList();
@@ -691,7 +893,7 @@
         'Content-Type': 'application/json',
         'X-App-Secret': CONFIG.APP_SECRET
       },
-      body: JSON.stringify({ signalements: signalements, sha: ghFileSha })
+      body: JSON.stringify({ items: signalements, sha: ghFileSha })
     })
     .then(function(r){
       if(!r.ok) throw new Error('HTTP ' + r.status);
