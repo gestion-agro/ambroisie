@@ -956,6 +956,7 @@
     localStorage.removeItem('ambroisie_user');
     localStorage.removeItem('ambroisie_role');
     if(trackSyncIntervalId){ clearInterval(trackSyncIntervalId); trackSyncIntervalId = null; }
+    if(signalSyncIntervalId){ clearInterval(signalSyncIntervalId); signalSyncIntervalId = null; }
     currentUser = null;
     currentRole = null;
     document.getElementById('accountModal').classList.add('hidden');
@@ -971,6 +972,7 @@
     document.getElementById('adminSection').style.display = currentRole === 'admin' ? 'block' : 'none';
     if(currentRole === 'admin') renderUserList();
     startTrackSync();
+    startSignalSync();
   }
 
   document.getElementById('btnAccount').addEventListener('click', function(){
@@ -1062,8 +1064,8 @@
     document.getElementById('syncBadge').classList.remove('show');
   }
 
-  function loadSignalements(){
-    showSync('Synchronisation…');
+  function loadSignalements(silent){
+    if(!silent) showSync('Synchronisation…');
     fetch(CONFIG.WORKER_URL, {
       method: 'GET',
       headers: { 'X-App-Secret': CONFIG.APP_SECRET }
@@ -1077,14 +1079,23 @@
       ghFileSha = data.sha || null;
       renderSignalMarkers();
       renderList();
-      hideSync();
+      if(!silent) hideSync();
     })
     .catch(function(e){
       console.error('Erreur chargement signalements', e);
-      hideSync();
-      showSync('Hors ligne — données locales uniquement');
-      setTimeout(hideSync, 3000);
+      if(!silent){
+        hideSync();
+        showSync('Hors ligne — données locales uniquement');
+        setTimeout(hideSync, 3000);
+      }
     });
+  }
+
+  var SIGNAL_SYNC_INTERVAL = 30000; // 30s
+  var signalSyncIntervalId = null;
+
+  function startSignalSync(){
+    signalSyncIntervalId = setInterval(function(){ loadSignalements(true); }, SIGNAL_SYNC_INTERVAL);
   }
 
   function saveSignalements(){
