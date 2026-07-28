@@ -204,12 +204,12 @@
   }
 
   /* ---- report modal ---- */
-  #reportModal, #listModal, #accountModal{
+  #reportModal, #listModal, #accountModal, #citizenModal{
     position:fixed;inset:0;z-index:2500;
     background:rgba(20,25,20,.55);
     display:flex;align-items:flex-end;justify-content:center;
   }
-  #reportModal.hidden, #listModal.hidden, #accountModal.hidden{display:none;}
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #citizenModal.hidden{display:none;}
   .sheet{
     width:100%;max-width:480px;
     background:var(--panel);
@@ -281,6 +281,33 @@
     box-shadow:2px 3px 0 rgba(0,0,0,.2);
     cursor:pointer;
   }
+  #btnCitizen{
+    position:fixed;left:14px;bottom:206px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:44px;height:44px;
+    font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #citizenBadge{
+    position:absolute;top:-6px;right:-6px;
+    background:var(--danger);color:#fff;
+    border-radius:50%;min-width:18px;height:18px;
+    font-size:10px;font-weight:800;
+    display:none;align-items:center;justify-content:center;
+    padding:0 3px;
+  }
+  #citizenBadge.show{ display:flex; }
+  .citizen-row{
+    border:2px solid var(--ink);border-radius:10px;
+    padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--ink);
+  }
+  .citizen-row .meta{ color:var(--muted);font-size:11px;margin-bottom:4px; }
+  .citizen-row img{ max-width:100%;border-radius:6px;margin:6px 0; }
+  .citizen-row .row-actions{ display:flex;gap:8px;margin-top:8px; }
   .user-row{
     display:flex;align-items:center;justify-content:space-between;
     border:1px solid #ddd;border-radius:8px;
@@ -389,6 +416,21 @@
 </div>
 
 <button id="btnAccount" title="Mon compte">👤</button>
+<button id="btnCitizen" title="Signalements citoyens" style="position:relative;">
+  🧑
+  <span id="citizenBadge">0</span>
+</button>
+
+<div id="citizenModal" class="hidden">
+  <div class="sheet">
+    <h3>Signalements citoyens (<span id="citizenCount">0</span>)</h3>
+    <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Signalements envoyés par les habitants via la page publique, à valider avant transfert dans la base officielle.</p>
+    <div id="citizenListContent"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseCitizen">Fermer</button>
+    </div>
+  </div>
+</div>
 
 <div id="accountModal" class="hidden">
   <div class="sheet">
@@ -943,6 +985,135 @@
     trackSyncIntervalId = setInterval(syncTracks, TRACK_SYNC_INTERVAL);
   }
 
+  // ================= SIGNALEMENTS CITOYENS (à valider) =================
+  function citizenApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/citizen'); }
+  var citizenReports = [];
+  var citizenSha = null;
+  var citizenSyncIntervalId = null;
+
+  function loadCitizenReports(silent){
+    return fetch(citizenApiUrl(), {
+      method: 'GET',
+      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+    })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){
+      citizenReports = data.items || [];
+      citizenSha = data.sha || null;
+      updateCitizenBadge();
+      renderCitizenList();
+    })
+    .catch(function(e){ console.warn('Erreur chargement signalements citoyens', e); });
+  }
+
+  function saveCitizenReports(){
+    return fetch(citizenApiUrl(), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
+      body: JSON.stringify({ items: citizenReports, sha: citizenSha })
+    })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){ citizenSha = data.sha; });
+  }
+
+  function updateCitizenBadge(){
+    var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; }).length;
+    var badge = document.getElementById('citizenBadge');
+    if(pending > 0){
+      badge.textContent = pending;
+      badge.classList.add('show');
+    } else {
+      badge.classList.remove('show');
+    }
+  }
+
+  function renderCitizenList(){
+    var content = document.getElementById('citizenListContent');
+    var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; })
+      .sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    document.getElementById('citizenCount').textContent = pending.length;
+
+    if(pending.length === 0){
+      content.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement citoyen en attente.</p>';
+      return;
+    }
+    content.innerHTML = pending.map(function(r){
+      return '<div class="citizen-row">' +
+        '<div class="meta">' + new Date(r.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(r.firstName || 'Anonyme') + '</div>' +
+        '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+        (r.photo ? '<img src="' + r.photo + '">' : '') +
+        '<div class="row-actions">' +
+          '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+          '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
+          '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    content.querySelectorAll('[data-cgoto]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var r = citizenReports.find(function(x){ return x.id === btn.getAttribute('data-cgoto'); });
+        if(r){
+          document.getElementById('citizenModal').classList.add('hidden');
+          following = false; updateFollowBtn();
+          map.setView([r.lat, r.lon], 17, { animate:true });
+        }
+      });
+    });
+    content.querySelectorAll('[data-cvalidate]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-cvalidate');
+        var r = citizenReports.find(function(x){ return x.id === id; });
+        if(!r) return;
+        var qtyLabel = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' }[r.quantity] || r.quantity;
+        var entry = {
+          id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+          lat: r.lat,
+          lon: r.lon,
+          name: (r.firstName || 'Anonyme') + ' (signalement citoyen)',
+          note: 'Quantité estimée : ' + qtyLabel,
+          photo: r.photo || null,
+          date: r.date,
+          status: 'a_traiter'
+        };
+        signalements.push(entry);
+        r.status = 'valide';
+        renderSignalMarkers();
+        renderList();
+        updateCitizenBadge();
+        renderCitizenList();
+        saveSignalements();
+        saveCitizenReports();
+      });
+    });
+    content.querySelectorAll('[data-creject]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-creject');
+        var r = citizenReports.find(function(x){ return x.id === id; });
+        if(!r) return;
+        if(!confirm('Rejeter ce signalement citoyen ? Il ne sera pas transféré et disparaîtra de la carte publique.')) return;
+        r.status = 'rejete';
+        updateCitizenBadge();
+        renderCitizenList();
+        saveCitizenReports();
+      });
+    });
+  }
+
+  function startCitizenSync(){
+    loadCitizenReports();
+    citizenSyncIntervalId = setInterval(function(){ loadCitizenReports(true); }, 20000);
+  }
+
+  document.getElementById('btnCitizen').addEventListener('click', function(){
+    renderCitizenList();
+    document.getElementById('citizenModal').classList.remove('hidden');
+    loadCitizenReports(true);
+  });
+  document.getElementById('btnCloseCitizen').addEventListener('click', function(){
+    document.getElementById('citizenModal').classList.add('hidden');
+  });
+
   async function initAuth(){
     var savedUser = localStorage.getItem('ambroisie_user');
     var savedRole = localStorage.getItem('ambroisie_role');
@@ -998,6 +1169,7 @@
     localStorage.removeItem('ambroisie_role');
     if(trackSyncIntervalId){ clearInterval(trackSyncIntervalId); trackSyncIntervalId = null; }
     if(signalSyncIntervalId){ clearInterval(signalSyncIntervalId); signalSyncIntervalId = null; }
+    if(citizenSyncIntervalId){ clearInterval(citizenSyncIntervalId); citizenSyncIntervalId = null; }
     currentUser = null;
     currentRole = null;
     document.getElementById('accountModal').classList.add('hidden');
@@ -1014,6 +1186,7 @@
     if(currentRole === 'admin') renderUserList();
     startTrackSync();
     startSignalSync();
+    startCitizenSync();
   }
 
   document.getElementById('btnAccount').addEventListener('click', function(){
