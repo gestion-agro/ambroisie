@@ -368,9 +368,9 @@
 </div>
 
 <div id="legend">
-  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsVisible" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
-  <div><span class="sw" style="background:#c9781f"></span> Départementale (RD)</div>
-  <div><span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</div>
+  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
+  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" checked style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
+  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" checked style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
   <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
   <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
   <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
@@ -530,7 +530,9 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  var roadsLayer = L.layerGroup().addTo(map);
+  var roadsLayerRC = L.layerGroup().addTo(map);
+  var roadsLayerRD = L.layerGroup().addTo(map);
+  var roadsLayerRN = L.layerGroup().addTo(map);
   var trackLayer = L.layerGroup().addTo(map);
   var otherTracksLayer = L.layerGroup().addTo(map);
   var userMarker = null;
@@ -603,7 +605,7 @@
           hideLoading();
           // Rafraîchir en arrière-plan sans bloquer l'utilisateur
           loadRoadsData(function(data){
-            roadsLayer.clearLayers();
+            roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
             drawRoads(data);
             saveCache(data);
           }, function(){ /* échec silencieux, on garde le cache */ });
@@ -874,7 +876,8 @@
       var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
       var classLabel = roadClass === 'RD' ? 'Départementale (RD)' : (roadClass === 'RN' ? 'Nationale (RN)' : 'Communale (RC)');
       line.bindPopup('<b>' + label + '</b><br>' + classLabel + (tags.ref ? ' — ' + tags.ref : ''));
-      line.addTo(roadsLayer);
+      var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : roadsLayerRC);
+      line.addTo(targetLayer);
       latlngs.forEach(function(p){ bounds.push(p); });
     });
     if(bounds.length){
@@ -1830,12 +1833,14 @@
   });
 
   // ---- Affichage/masquage et rechargement manuel des routes ----
-  document.getElementById('chkRoadsVisible').addEventListener('change', function(e){
-    if(e.target.checked){
-      map.addLayer(roadsLayer);
-    } else {
-      map.removeLayer(roadsLayer);
-    }
+  document.getElementById('chkRoadsRC').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerRC); } else { map.removeLayer(roadsLayerRC); }
+  });
+  document.getElementById('chkRoadsRD').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerRD); } else { map.removeLayer(roadsLayerRD); }
+  });
+  document.getElementById('chkRoadsRN').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerRN); } else { map.removeLayer(roadsLayerRN); }
   });
 
   document.getElementById('btnReloadRoads').addEventListener('click', function(){
@@ -1843,7 +1848,7 @@
     btn.disabled = true;
     btn.textContent = 'Chargement…';
     loadRoadsData(function(data){
-      roadsLayer.clearLayers();
+      roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
       drawRoads(data);
       saveCache(data);
       btn.disabled = false;
