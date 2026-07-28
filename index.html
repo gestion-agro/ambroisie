@@ -130,6 +130,7 @@
   #loading button.btn{margin-top:10px;max-width:220px;}
 
   .leaflet-control-attribution{font-size:9px;}
+  .leaflet-top.leaflet-left{ margin-top:64px; }
 
   /* ---- login screen ---- */
   #loginScreen{
@@ -303,7 +304,9 @@
 </div>
 
 <div id="legend">
-  <div><span class="sw" style="background:var(--line)"></span> Routes communales</div>
+  <div><span class="sw" style="background:#2f6b3a"></span> Communale (RC)</div>
+  <div><span class="sw" style="background:#c9781f"></span> Départementale (RD)</div>
+  <div><span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</div>
   <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
   <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
 </div>
@@ -595,16 +598,36 @@
     tryEndpoint(0);
   }
 
-  function roadStyle(highwayType){
-    var w = 4, dash = null, color = '#2f6b3a';
-    if(highwayType === 'unclassified' || highwayType === 'residential'){
-      w = 4;
-    } else if(highwayType === 'tertiary' || highwayType === 'secondary' || highwayType === 'primary'){
+  // Classification approximative RC / RD / RN, basée sur le numéro de route (ref),
+  // OSM n'ayant pas de tag direct "gestionnaire de la voie".
+  function classifyRoad(tags){
+    var ref = (tags.ref || '').trim();
+    if(/^D\s?\d/i.test(ref)) return 'RD';
+    if(/^N\s?\d/i.test(ref)) return 'RN';
+    if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    return 'RC';
+  }
+
+  function roadStyle(highwayType, roadClass){
+    var w = 4, dash = null, color = '#2f6b3a'; // vert par défaut : route communale (RC)
+
+    if(roadClass === 'RD'){
+      color = '#c9781f'; // orange : départementale, pas de notre ressort
       w = 5;
-    } else if(highwayType === 'track'){
-      w = 3; dash = '2 6';
-    } else if(highwayType === 'service'){
-      w = 3; dash = '1 5';
+    } else if(roadClass === 'RN'){
+      color = '#8a3fbf'; // violet : nationale
+      w = 6;
+    } else {
+      // Style RC selon le type de voie
+      if(highwayType === 'unclassified' || highwayType === 'residential'){
+        w = 4;
+      } else if(highwayType === 'tertiary' || highwayType === 'secondary' || highwayType === 'primary'){
+        w = 5;
+      } else if(highwayType === 'track'){
+        w = 3; dash = '2 6';
+      } else if(highwayType === 'service'){
+        w = 3; dash = '1 5';
+      }
     }
     return { color: color, weight: w, opacity: 0.85, dashArray: dash };
   }
@@ -622,10 +645,12 @@
       if(el.type !== 'way' || !el.geometry) return;
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
       var tags = el.tags || {};
-      var style = roadStyle(tags.highway);
+      var roadClass = classifyRoad(tags);
+      var style = roadStyle(tags.highway, roadClass);
       var line = L.polyline(latlngs, style);
       var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
-      line.bindPopup('<b>' + label + '</b><br>Type : ' + (tags.highway || '—'));
+      var classLabel = roadClass === 'RD' ? 'Départementale (RD)' : (roadClass === 'RN' ? 'Nationale (RN)' : 'Communale (RC)');
+      line.bindPopup('<b>' + label + '</b><br>' + classLabel + (tags.ref ? ' — ' + tags.ref : ''));
       line.addTo(roadsLayer);
       latlngs.forEach(function(p){ bounds.push(p); });
     });
