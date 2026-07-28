@@ -332,14 +332,10 @@
   "use strict";
 
   // ================= CONFIGURATION À REMPLIR =================
-  // Voir les instructions fournies pour créer le token et le dépôt.
   var CONFIG = {
-    GITHUB_OWNER: "VOTRE-PSEUDO-GITHUB",      // ex: "jdupont-mairie"
-    GITHUB_REPO: "ambroisie-belsentes-data",  // dépôt PRIVÉ dédié aux données
-    GITHUB_TOKEN: "COLLEZ_VOTRE_TOKEN_ICI",   // token à droits limités (voir instructions)
-    GITHUB_BRANCH: "main",
-    DATA_FILE: "signalements.json",
-    APP_PASSWORD: "ambroisie07"               // mot de passe partagé, à changer
+    WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements",
+    APP_SECRET: "belsentes-secret-2026",   // doit être IDENTIQUE au secret APP_SECRET mis dans le Worker Cloudflare
+    APP_PASSWORD: "ambroisie07"            // mot de passe partagé, à changer
   };
   // ==============================================================
 
@@ -649,14 +645,9 @@
     document.getElementById('loginScreen').classList.add('hidden');
   }
 
-  // ================= STOCKAGE PARTAGÉ (GitHub) =================
+  // ================= STOCKAGE PARTAGÉ (via Cloudflare Worker) =================
   var signalements = [];
-  var ghFileSha = null; // nécessaire pour mettre à jour le fichier sans écraser en conflit
-
-  function ghApiUrl(){
-    return 'https://api.github.com/repos/' + CONFIG.GITHUB_OWNER + '/' + CONFIG.GITHUB_REPO +
-           '/contents/' + CONFIG.DATA_FILE;
-  }
+  var ghFileSha = null; // nécessaire pour mettre à jour sans écraser en conflit
 
   function showSync(msg){
     var b = document.getElementById('syncBadge');
@@ -669,29 +660,17 @@
 
   function loadSignalements(){
     showSync('Synchronisation…');
-    fetch(ghApiUrl() + '?ref=' + CONFIG.GITHUB_BRANCH, {
-      headers: {
-        'Authorization': 'Bearer ' + CONFIG.GITHUB_TOKEN,
-        'Accept': 'application/vnd.github+json'
-      }
+    fetch(CONFIG.WORKER_URL, {
+      method: 'GET',
+      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
     })
     .then(function(r){
-      if(r.status === 404){
-        // fichier pas encore créé : première utilisation
-        ghFileSha = null;
-        return { content: null };
-      }
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     })
     .then(function(data){
-      if(data.content){
-        ghFileSha = data.sha;
-        var jsonStr = decodeURIComponent(escape(atob(data.content)));
-        signalements = JSON.parse(jsonStr);
-      } else {
-        signalements = [];
-      }
+      signalements = data.signalements || [];
+      ghFileSha = data.sha || null;
       renderSignalMarkers();
       renderList();
       hideSync();
@@ -706,36 +685,26 @@
 
   function saveSignalements(){
     showSync('Enregistrement…');
-    var jsonStr = JSON.stringify(signalements, null, 2);
-    var b64 = btoa(unescape(encodeURIComponent(jsonStr)));
-    var body = {
-      message: 'Mise à jour signalements (' + new Date().toISOString() + ')',
-      content: b64,
-      branch: CONFIG.GITHUB_BRANCH
-    };
-    if(ghFileSha) body.sha = ghFileSha;
-
-    return fetch(ghApiUrl(), {
+    return fetch(CONFIG.WORKER_URL, {
       method: 'PUT',
       headers: {
-        'Authorization': 'Bearer ' + CONFIG.GITHUB_TOKEN,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-App-Secret': CONFIG.APP_SECRET
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ signalements: signalements, sha: ghFileSha })
     })
     .then(function(r){
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     })
     .then(function(data){
-      ghFileSha = data.content.sha;
+      ghFileSha = data.sha;
       hideSync();
     })
     .catch(function(e){
       console.error('Erreur sauvegarde', e);
       hideSync();
-      alert('Impossible d\'enregistrer sur GitHub. Vérifiez votre connexion et le token configuré. Le signalement reste visible localement pour l\'instant.');
+      alert('Impossible d\'enregistrer. Vérifiez votre connexion. Le signalement reste visible localement pour l\'instant.');
     });
   }
 
