@@ -204,12 +204,12 @@
   }
 
   /* ---- report modal ---- */
-  #reportModal, #listModal, #accountModal, #citizenModal{
+  #reportModal, #listModal, #accountModal{
     position:fixed;inset:0;z-index:2500;
     background:rgba(20,25,20,.55);
     display:flex;align-items:flex-end;justify-content:center;
   }
-  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #citizenModal.hidden{display:none;}
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden{display:none;}
   .sheet{
     width:100%;max-width:480px;
     background:var(--panel);
@@ -287,26 +287,15 @@
     box-shadow:2px 3px 0 rgba(0,0,0,.2);
     cursor:pointer;
   }
-  #btnCitizen{
-    position:fixed;left:14px;bottom:206px;z-index:999;
-    background:var(--panel);color:var(--ink);
-    border:3px solid var(--ink);
-    border-radius:50%;
-    width:44px;height:44px;
-    font-size:18px;
-    display:flex;align-items:center;justify-content:center;
-    box-shadow:2px 3px 0 rgba(0,0,0,.2);
-    cursor:pointer;
-  }
-  #citizenBadge{
-    position:absolute;top:-6px;right:-6px;
+  #listBadge{
+    position:absolute;top:-4px;right:-4px;
     background:var(--danger);color:#fff;
     border-radius:50%;min-width:18px;height:18px;
     font-size:10px;font-weight:800;
     display:none;align-items:center;justify-content:center;
     padding:0 3px;
   }
-  #citizenBadge.show{ display:flex; }
+  #listBadge.show{ display:flex; }
   .citizen-row{
     border:2px solid var(--ink);border-radius:10px;
     padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--ink);
@@ -377,7 +366,7 @@
   <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
 </div>
 
-<button id="btnListToggle" title="Liste des signalements">☰</button>
+<button id="btnListToggle" title="Liste des signalements" style="position:relative;">☰<span id="listBadge">0</span></button>
 <button id="btnReport" title="Signaler ambroisie">🌿</button>
 <button id="btnPlacePin" title="Signaler à un endroit précis sur la carte">📍</button>
 
@@ -434,21 +423,6 @@
 </div>
 
 <button id="btnAccount" title="Mon compte">👤</button>
-<button id="btnCitizen" title="Signalements citoyens" style="position:relative;">
-  🧑
-  <span id="citizenBadge">0</span>
-</button>
-
-<div id="citizenModal" class="hidden">
-  <div class="sheet">
-    <h3>Signalements citoyens (<span id="citizenCount">0</span>)</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Signalements envoyés par les habitants via la page publique, à valider avant transfert dans la base officielle.</p>
-    <div id="citizenListContent"></div>
-    <div class="sheet-actions">
-      <button class="btn" id="btnCloseCitizen">Fermer</button>
-    </div>
-  </div>
-</div>
 
 <div id="accountModal" class="hidden">
   <div class="sheet">
@@ -600,24 +574,30 @@
       if(cached){
         var parsed = JSON.parse(cached);
         var ageDays = (Date.now() - parsed.savedAt) / (1000*60*60*24);
+        var isPrecise = parsed.precision === 'insee';
         if(ageDays < CACHE_MAX_AGE_DAYS){
           drawRoads(parsed.data);
           hideLoading();
-          // Rafraîchir en arrière-plan sans bloquer l'utilisateur
-          loadRoadsData(function(data){
-            roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
-            drawRoads(data);
-            saveCache(data);
-          }, function(){ /* échec silencieux, on garde le cache */ });
-          return;
+          if(isPrecise){
+            // Cache déjà précis et récent : simple rafraîchissement discret en arrière-plan
+            loadRoadsData(function(data, precision){
+              roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
+              drawRoads(data);
+              saveCache(data, precision);
+            }, function(){ /* échec silencieux, on garde le cache précis existant */ });
+            return;
+          }
+          // Le cache existant vient du rectangle de secours (pas garanti précis) :
+          // on continue vers une VRAIE tentative réseau ci-dessous plutôt que de
+          // s'arrêter là, pour ne pas rester bloqué indéfiniment sur un rectangle.
+        } else {
+          staleCache = parsed.data;
         }
-        // Cache périmé mais gardé de côté : mieux qu'une carte vide si le
-        // réseau échoue totalement pour la nouvelle tentative ci-dessous.
-        staleCache = parsed.data;
       }
     } catch(e){ console.warn('Lecture cache impossible', e); }
 
-    // 2) Pas de cache valide : télécharger, avec timeout et bouton d'échappement
+    // 2) Télécharger (ou re-télécharger si le cache n'était que le rectangle),
+    // avec timeout et bouton d'échappement
     var skipTimer = setTimeout(function(){
       var box = document.getElementById('loading');
       if(box.classList.contains('hidden')) return;
@@ -634,10 +614,11 @@
       }
     }, 12000);
 
-    loadRoadsData(function(data){
+    loadRoadsData(function(data, precision){
       clearTimeout(skipTimer);
+      roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
       drawRoads(data);
-      saveCache(data);
+      saveCache(data, precision);
       hideLoading();
     }, function(){
       clearTimeout(skipTimer);
@@ -653,7 +634,8 @@
 
   // Essaie d'abord le contour administratif précis (code INSEE) ; si ça échoue
   // ou ne renvoie aucune route, se replie sur la boîte englobante (moins précis
-  // mais garantit un affichage).
+  // mais garantit un affichage). Le callback reçoit aussi la provenance ('insee'
+  // ou 'bbox') pour que l'appelant sache si le résultat est fiable à long terme.
   function loadRoadsData(onSuccess, onFail){
     var queryInsee =
       '[out:json][timeout:40];' +
@@ -661,14 +643,9 @@
       'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
       'out body geom;';
 
-    // La requête par contour administratif (area) est plus lourde à calculer côté
-    // serveur que la requête bbox : on lui laisse donc plus de temps côté client
-    // aussi, sinon on coupe la requête avant que le serveur ait fini (ce qui arrivait
-    // notamment sur connexions mobiles plus lentes, provoquant un repli systématique
-    // sur le rectangle).
     fetchFromOverpass(queryInsee, function(data){
       if(data.elements && data.elements.length > 0){
-        onSuccess(data);
+        onSuccess(data, 'insee');
       } else {
         console.warn('Contour INSEE introuvable ou vide dans OSM, repli sur la boîte englobante.');
         var queryBbox =
@@ -676,7 +653,7 @@
           '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
           'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
           'out body geom;';
-        fetchFromOverpass(queryBbox, onSuccess, onFail, 20000);
+        fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 20000);
       }
     }, function(){
       // La requête INSEE elle-même a échoué (réseau/serveur) : on tente quand même la bbox
@@ -685,13 +662,13 @@
         '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
         'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
         'out body geom;';
-      fetchFromOverpass(queryBbox, onSuccess, onFail, 20000);
+      fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 20000);
     }, 45000);
   }
 
-  function saveCache(data){
+  function saveCache(data, precision){
     try{
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data }));
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), precision: precision || 'bbox', data: data }));
     } catch(e){ console.warn('Sauvegarde cache impossible', e); }
   }
 
@@ -1158,7 +1135,7 @@
       citizenReports = data.items || [];
       citizenSha = data.sha || null;
       updateCitizenBadge();
-      renderCitizenList();
+      renderList();
     })
     .catch(function(e){ console.warn('Erreur chargement signalements citoyens', e); });
   }
@@ -1175,7 +1152,7 @@
 
   function updateCitizenBadge(){
     var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; }).length;
-    var badge = document.getElementById('citizenBadge');
+    var badge = document.getElementById('listBadge');
     if(pending > 0){
       badge.textContent = pending;
       badge.classList.add('show');
@@ -1184,17 +1161,20 @@
     }
   }
 
-  function renderCitizenList(){
-    var content = document.getElementById('citizenListContent');
+  // Rend la section "signalements citoyens en attente" DANS le même conteneur
+  // que la liste officielle (#listContent), pour éviter d'avoir un bouton et un
+  // panneau séparés qui prêtaient à confusion.
+  function renderCitizenSection(){
     var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; })
       .sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
-    document.getElementById('citizenCount').textContent = pending.length;
 
-    if(pending.length === 0){
-      content.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement citoyen en attente.</p>';
-      return;
-    }
-    content.innerHTML = pending.map(function(r){
+    if(pending.length === 0) return '';
+
+    var html = '<div style="margin:18px 0 10px;padding-top:14px;border-top:2px solid #ddd;">' +
+      '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink);">🧑 Signalements citoyens à valider (' + pending.length + ')</h3>' +
+      '</div>';
+
+    html += pending.map(function(r){
       var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
       return '<div class="citizen-row">' +
         '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
@@ -1209,11 +1189,15 @@
       '</div>';
     }).join('');
 
+    return html;
+  }
+
+  function wireCitizenSectionButtons(content){
     content.querySelectorAll('[data-cgoto]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var r = citizenReports.find(function(x){ return x.id === btn.getAttribute('data-cgoto'); });
         if(r){
-          document.getElementById('citizenModal').classList.add('hidden');
+          document.getElementById('listModal').classList.add('hidden');
           following = false; updateFollowBtn();
           map.setView([r.lat, r.lon], 17, { animate:true });
         }
@@ -1243,7 +1227,6 @@
         renderSignalMarkers();
         renderList();
         updateCitizenBadge();
-        renderCitizenList();
         saveSignalements();
         saveCitizenReports();
       });
@@ -1255,8 +1238,8 @@
         if(!r) return;
         if(!confirm('Rejeter ce signalement citoyen ? Il ne sera pas transféré et disparaîtra de la carte publique.')) return;
         r.status = 'rejete';
+        renderList();
         updateCitizenBadge();
-        renderCitizenList();
         saveCitizenReports();
       });
     });
@@ -1266,15 +1249,6 @@
     loadCitizenReports();
     citizenSyncIntervalId = setInterval(function(){ loadCitizenReports(true); }, 20000);
   }
-
-  document.getElementById('btnCitizen').addEventListener('click', function(){
-    renderCitizenList();
-    document.getElementById('citizenModal').classList.remove('hidden');
-    loadCitizenReports(true);
-  });
-  document.getElementById('btnCloseCitizen').addEventListener('click', function(){
-    document.getElementById('citizenModal').classList.add('hidden');
-  });
 
   async function initAuth(){
     var savedUser = localStorage.getItem('ambroisie_user');
@@ -1704,8 +1678,10 @@
     var visible = signalements.filter(function(s){ return listShowErrors || !getErreur(s); });
 
     if(visible.length === 0){
-      content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>';
+      content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>' + renderCitizenSection();
       wireToggleErrorsButton();
+      wireCitizenSectionButtons(content);
+      updateCitizenBadge();
       return;
     }
     var sorted = visible.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
@@ -1734,9 +1710,11 @@
           (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
         '</div>' +
       '</div>';
-    }).join('');
+    }).join('') + renderCitizenSection();
 
     wireToggleErrorsButton();
+    wireCitizenSectionButtons(content);
+    updateCitizenBadge();
 
     content.querySelectorAll('[data-goto]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -1817,6 +1795,7 @@
     renderList();
     document.getElementById('listModal').classList.remove('hidden');
     loadSignalements(true); // rafraîchit immédiatement dès l'ouverture, sans attendre le cycle automatique
+    loadCitizenReports(true);
   });
   document.getElementById('btnCloseList').addEventListener('click', function(){
     document.getElementById('listModal').classList.add('hidden');
@@ -1847,10 +1826,10 @@
     var btn = document.getElementById('btnReloadRoads');
     btn.disabled = true;
     btn.textContent = 'Chargement…';
-    loadRoadsData(function(data){
+    loadRoadsData(function(data, precision){
       roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
       drawRoads(data);
-      saveCache(data);
+      saveCache(data, precision);
       btn.disabled = false;
       btn.textContent = '↻ Recharger les routes';
     }, function(){
