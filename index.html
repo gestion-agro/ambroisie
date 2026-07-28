@@ -227,6 +227,12 @@
     font-family:inherit;
   }
   .field textarea{min-height:70px;resize:vertical;}
+  .qty-options{ display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+  .qty-option{
+    border:2px solid #ccc;border-radius:10px;padding:12px 8px;text-align:center;
+    font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;
+  }
+  .qty-option.selected{ border-color:var(--line);background:#e4f0e2;color:var(--line); }
   .sheet-actions{display:flex;gap:10px;margin-top:6px;}
   .sheet-actions button{flex:1;}
   #photoPreview{margin-top:8px;max-width:100%;border-radius:8px;display:none;}
@@ -387,18 +393,28 @@
       <div id="reportCoords" style="font-size:13px;color:var(--muted)">—</div>
     </div>
     <div class="field">
-      <label>Conseiller</label>
-      <input type="text" id="reportName" placeholder="Nom">
+      <label>Signalé par</label>
+      <div id="reportByName" style="font-size:14px;font-weight:700;color:var(--ink)">—</div>
     </div>
     <div class="field">
-      <label>Note</label>
-      <textarea id="reportNote" placeholder="Emplacement, quantité, accès..."></textarea>
+      <label>Quantité estimée</label>
+      <div class="qty-options" id="reportQtyOptions">
+        <div class="qty-option" data-qty="&lt;10">Moins de 10 plants</div>
+        <div class="qty-option" data-qty="10-50">10 à 50 plants</div>
+        <div class="qty-option" data-qty="50-500">50 à 500 plants</div>
+        <div class="qty-option" data-qty="&gt;500">Plus de 500 plants</div>
+      </div>
     </div>
     <div class="field">
-      <label>Photo (optionnelle)</label>
+      <label>Note complémentaire (facultatif)</label>
+      <textarea id="reportNote" placeholder="Emplacement précis, accès..."></textarea>
+    </div>
+    <div class="field">
+      <label>Photo (si besoin)</label>
       <input type="file" id="reportPhoto" accept="image/*" capture="environment">
       <img id="photoPreview">
     </div>
+    <div id="reportFormErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
     <div class="sheet-actions">
       <button class="btn" id="btnCancelReport">Annuler</button>
       <button class="btn primary" id="btnSaveReport">Enregistrer</button>
@@ -451,8 +467,18 @@
     <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
       <h3>Gérer les utilisateurs (admin)</h3>
       <div id="userListContent"></div>
-      <div class="field" style="margin-top:14px;">
-        <label>Nouvel identifiant</label>
+      <div class="field" style="margin-top:14px;display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label>Prénom</label>
+          <input type="text" id="newUserFirstName" placeholder="Prénom">
+        </div>
+        <div style="flex:1;">
+          <label>Nom</label>
+          <input type="text" id="newUserLastName" placeholder="Nom">
+        </div>
+      </div>
+      <div class="field">
+        <label>Identifiant de connexion</label>
         <input type="text" id="newUserName" placeholder="ex: jdupont">
       </div>
       <div class="field">
@@ -965,6 +991,23 @@
   var DEFAULT_ADMIN_USERNAME = 'clement.thieuleux';
   var DEFAULT_ADMIN_PASSWORD = 'azerty';
 
+  // Si un compte n'a pas de prénom/nom enregistré, on en déduit un raisonnable
+  // à partir de l'identifiant (ex: "jean.dupont" -> "Jean Dupont").
+  function deriveNameFromUsername(username){
+    var parts = (username || '').split(/[._\-\s]+/).filter(Boolean);
+    if(parts.length >= 2){
+      return parts.map(function(p){ return p.charAt(0).toUpperCase() + p.slice(1); }).join(' ');
+    }
+    return username;
+  }
+  function getUserFullName(username){
+    var u = users.find(function(x){ return x.username === username; });
+    if(u && (u.firstName || u.lastName)){
+      return ((u.firstName || '') + ' ' + (u.lastName || '')).trim();
+    }
+    return deriveNameFromUsername(username);
+  }
+
   async function sha256Hex(text){
     var enc = new TextEncoder().encode(text);
     var buf = await crypto.subtle.digest('SHA-256', enc);
@@ -1163,7 +1206,9 @@
           note: 'Quantité estimée : ' + qtyLabel,
           photo: r.photo || null,
           date: r.date,
-          status: 'a_traiter'
+          classification: 'valide',
+          traite: false,
+          isErreur: false
         };
         signalements.push(entry);
         r.status = 'valide';
@@ -1212,7 +1257,8 @@
       await fetchUsers();
       if(users.length === 0){
         var hash = await sha256Hex(DEFAULT_ADMIN_PASSWORD);
-        users = [{ username: DEFAULT_ADMIN_USERNAME, passwordHash: hash, role: 'admin' }];
+        var derived = deriveNameFromUsername(DEFAULT_ADMIN_USERNAME).split(' ');
+        users = [{ username: DEFAULT_ADMIN_USERNAME, passwordHash: hash, role: 'admin', firstName: derived[0] || '', lastName: derived.slice(1).join(' ') || '' }];
         await saveUsers();
       }
     } catch(e){
@@ -1318,7 +1364,7 @@
     box.innerHTML = users.map(function(u){
       var canDelete = u.username !== currentUser && !(u.role === 'admin' && users.filter(function(x){return x.role==='admin';}).length <= 1);
       return '<div class="user-row">' +
-        '<span>' + escapeHtml(u.username) + ' <span class="role-tag">' + (u.role === 'admin' ? 'Admin' : 'Conseiller') + '</span></span>' +
+        '<span>' + escapeHtml(getUserFullName(u.username)) + ' (' + escapeHtml(u.username) + ') <span class="role-tag">' + (u.role === 'admin' ? 'Admin' : 'Conseiller') + '</span></span>' +
         (canDelete ? '<button data-del="' + escapeHtml(u.username) + '">Supprimer</button>' : '') +
       '</div>';
     }).join('');
@@ -1336,15 +1382,19 @@
   document.getElementById('btnAddUser').addEventListener('click', async function(){
     var uname = document.getElementById('newUserName').value.trim();
     var upass = document.getElementById('newUserPass').value;
+    var ufirst = document.getElementById('newUserFirstName').value.trim();
+    var ulast = document.getElementById('newUserLastName').value.trim();
     var err = document.getElementById('accountErr');
-    if(!uname || !upass){ err.textContent = 'Identifiant et mot de passe requis.'; return; }
+    if(!uname || !upass || !ufirst || !ulast){ err.textContent = 'Prénom, nom, identifiant et mot de passe requis.'; return; }
     if(users.find(function(u){ return u.username === uname; })){ err.textContent = 'Cet identifiant existe déjà.'; return; }
     var hash = await sha256Hex(upass);
-    users.push({ username: uname, passwordHash: hash, role: 'user' });
+    users.push({ username: uname, passwordHash: hash, role: 'user', firstName: ufirst, lastName: ulast });
     try{
       await saveUsers();
       document.getElementById('newUserName').value = '';
       document.getElementById('newUserPass').value = '';
+      document.getElementById('newUserFirstName').value = '';
+      document.getElementById('newUserLastName').value = '';
       err.style.color = 'var(--line)';
       err.textContent = 'Utilisateur créé.';
       renderUserList();
@@ -1430,11 +1480,27 @@
   var signalMarkersLayer = L.layerGroup();
   var pendingReportCoords = null;
 
-  function signalIcon(status){
-    var cls = status === 'traite' ? ' done' : (status === 'erreur' ? ' erreur' : '');
+  // Classification transmise à FREDON, indépendante du fait que l'ambroisie
+  // ait été physiquement traitée ou non (voir getTraite) et du marquage erreur.
+  var CLASSIFICATIONS = {
+    'valide':        { label: 'Validé',           color: '#2f6b3a' },
+    'en_cours':      { label: 'En cours',         color: '#c98a1f' },
+    'doublon':       { label: 'Doublon',          color: '#5c6bd6' },
+    'pas_ambroisie': { label: "Pas d'ambroisie",  color: '#8a8a8a' }
+  };
+
+  // Compatibilité avec les anciens signalements enregistrés avant l'ajout de
+  // ce système (qui utilisaient un simple champ status: 'a_traiter'/'traite'/'erreur').
+  function getClassification(s){ return s.classification || 'valide'; }
+  function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
+  function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
+
+  function signalIcon(entry){
+    var clsInfo = CLASSIFICATIONS[getClassification(entry)] || CLASSIFICATIONS['valide'];
+    var opacity = getTraite(entry) ? 0.45 : 1;
     return L.divIcon({
       className: '',
-      html: '<div class="signal-icon' + cls + '"></div>',
+      html: '<div class="signal-icon" style="background:' + clsInfo.color + ';opacity:' + opacity + ';"></div>',
       iconSize: [26,26],
       iconAnchor: [13,26]
     });
@@ -1445,12 +1511,13 @@
     signalements.forEach(function(s){
       // Les signalements marqués "erreur" (faux positif) sont masqués de la carte,
       // mais restent consultables dans l'onglet dédié de la liste.
-      if(s.status === 'erreur') return;
-      var m = L.marker([s.lat, s.lon], { icon: signalIcon(s.status) });
+      if(getErreur(s)) return;
+      var m = L.marker([s.lat, s.lon], { icon: signalIcon(s) });
+      var clsInfo = CLASSIFICATIONS[getClassification(s)] || CLASSIFICATIONS['valide'];
       var popupHtml = '<b>' + escapeHtml(s.name || 'Conseiller') + '</b><br>' +
         new Date(s.date).toLocaleString('fr-FR') +
         (s.note ? '<br>' + escapeHtml(s.note) : '') +
-        (s.status === 'traite' ? '<br><i>Traité</i>' : '');
+        '<br>' + clsInfo.label + ' · ' + (getTraite(s) ? 'Traité' : 'Non traité');
       m.bindPopup(popupHtml);
       m.addTo(signalMarkersLayer);
     });
@@ -1464,15 +1531,28 @@
   }
 
   // ---- Ouverture du formulaire de signalement ----
+  var selectedQtyInternal = null;
+
   function openReportForm(lat, lon){
     pendingReportCoords = { lat: lat, lon: lon };
     document.getElementById('reportCoords').textContent = lat.toFixed(5) + ', ' + lon.toFixed(5);
-    document.getElementById('reportName').value = currentUser || '';
+    document.getElementById('reportByName').textContent = getUserFullName(currentUser);
+    selectedQtyInternal = null;
+    document.querySelectorAll('#reportQtyOptions .qty-option').forEach(function(el){ el.classList.remove('selected'); });
     document.getElementById('reportNote').value = '';
     document.getElementById('reportPhoto').value = '';
     document.getElementById('photoPreview').style.display = 'none';
+    document.getElementById('reportFormErr').textContent = '';
     document.getElementById('reportModal').classList.remove('hidden');
   }
+
+  document.querySelectorAll('#reportQtyOptions .qty-option').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#reportQtyOptions .qty-option').forEach(function(o){ o.classList.remove('selected'); });
+      el.classList.add('selected');
+      selectedQtyInternal = el.getAttribute('data-qty');
+    });
+  });
 
   document.getElementById('btnReport').addEventListener('click', function(){
     if(!lastFix){
@@ -1552,17 +1632,24 @@
     reader.readAsDataURL(file);
   });
 
+  var QTY_LABELS = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' };
+
   document.getElementById('btnSaveReport').addEventListener('click', function(){
     if(!pendingReportCoords) return;
+    var err = document.getElementById('reportFormErr');
+    if(!selectedQtyInternal){ err.textContent = 'Merci d\'indiquer une quantité estimée.'; return; }
+    var extraNote = document.getElementById('reportNote').value.trim();
     var entry = {
       id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
       lat: pendingReportCoords.lat,
       lon: pendingReportCoords.lon,
-      name: document.getElementById('reportName').value.trim() || currentUser,
-      note: document.getElementById('reportNote').value.trim(),
+      name: getUserFullName(currentUser),
+      note: 'Quantité estimée : ' + QTY_LABELS[selectedQtyInternal] + (extraNote ? ' — ' + extraNote : ''),
       photo: photoDataUrl || null,
       date: new Date().toISOString(),
-      status: 'a_traiter'
+      classification: 'valide', // un signalement fait directement par un conseiller est considéré validé d'emblée
+      traite: false,
+      isErreur: false
     };
     signalements.push(entry);
     renderSignalMarkers();
@@ -1577,7 +1664,7 @@
 
   function renderList(){
     var content = document.getElementById('listContent');
-    var activeCount = signalements.filter(function(s){ return s.status !== 'erreur'; }).length;
+    var activeCount = signalements.filter(function(s){ return !getErreur(s); }).length;
     var errorCount = signalements.length - activeCount;
     document.getElementById('listCount').textContent = activeCount;
 
@@ -1586,7 +1673,7 @@
         (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
       '</button></div>';
 
-    var visible = signalements.filter(function(s){ return listShowErrors || s.status !== 'erreur'; });
+    var visible = signalements.filter(function(s){ return listShowErrors || !getErreur(s); });
 
     if(visible.length === 0){
       content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>';
@@ -1595,20 +1682,26 @@
     }
     var sorted = visible.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
     content.innerHTML = toggleBar + sorted.map(function(s){
-      var isDone = s.status === 'traite';
-      var isErreur = s.status === 'erreur';
-      var pillClass = isDone ? ' done' : (isErreur ? ' erreur' : '');
-      var pillLabel = isDone ? 'Traité' : (isErreur ? 'Signalement erroné' : 'À traiter');
+      var clsKey = getClassification(s);
+      var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
+      var isTraite = getTraite(s);
+      var isErreur = getErreur(s);
       var canDelete = currentRole === 'admin';
+      var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
+        return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
+      }).join('');
       return '<div class="signal-row">' +
-        '<span class="status-pill' + pillClass + '">' + pillLabel + '</span>' +
+        '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
+        '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
+        (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
         '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
         '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
         (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
         (s.photo ? '<img src="' + s.photo + '">' : '') +
-        '<div class="row-actions">' +
+        '<div class="row-actions" style="flex-wrap:wrap;">' +
           '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
-          (!isErreur ? '<button class="btn" data-toggle="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isDone ? 'À traiter' : 'Traité') + '</button>' : '') +
+          '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
+          '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
           '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
           (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
         '</div>' +
@@ -1628,12 +1721,28 @@
         }
       });
     });
-    content.querySelectorAll('[data-toggle]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.getAttribute('data-toggle');
+    content.querySelectorAll('[data-classify]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        var id = sel.getAttribute('data-classify');
         var s = signalements.find(function(x){ return x.id === id; });
         if(s){
-          s.status = s.status === 'traite' ? 'a_traiter' : 'traite';
+          s.classification = sel.value;
+          s.traite = getTraite(s);
+          s.isErreur = getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-toggletraite]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-toggletraite');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = getClassification(s);
+          s.traite = !getTraite(s);
+          s.isErreur = getErreur(s);
           renderSignalMarkers();
           renderList();
           saveSignalements();
@@ -1645,7 +1754,9 @@
         var id = btn.getAttribute('data-erreur');
         var s = signalements.find(function(x){ return x.id === id; });
         if(s){
-          s.status = s.status === 'erreur' ? 'a_traiter' : 'erreur';
+          s.classification = getClassification(s);
+          s.traite = getTraite(s);
+          s.isErreur = !getErreur(s);
           renderSignalMarkers();
           renderList();
           saveSignalements();
