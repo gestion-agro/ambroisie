@@ -1,1 +1,1817 @@
-d
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Inspection Ambroisie — Belsentes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --ink:#1a2b1f;
+    --paper:#f6f4ee;
+    --line:#2f6b3a;
+    --line-done:#c8501f;
+    --amber:#c98a1f;
+    --panel:#ffffff;
+    --danger:#b23a2e;
+    --muted:#5c6b5f;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--ink);
+    overscroll-behavior:none;
+  }
+  #map{
+    position:fixed;inset:0;
+    z-index:1;
+  }
+
+  /* ---- top bar ---- */
+  #topbar{
+    position:fixed;top:0;left:0;right:0;z-index:1000;
+    background:var(--panel);
+    border-bottom:3px solid var(--ink);
+    padding:10px 14px;
+    display:flex;align-items:center;justify-content:space-between;
+    gap:10px;
+    font-size:14px;
+  }
+  #topbar .title{
+    font-weight:800;
+    color:var(--ink);
+    letter-spacing:-0.01em;
+    display:flex;flex-direction:column;line-height:1.15;
+  }
+  #topbar .title small{
+    font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.03em;text-transform:uppercase;
+  }
+  #status{
+    display:flex;align-items:center;gap:6px;
+    font-weight:700;font-size:12px;
+    padding:5px 10px;border-radius:20px;
+    border:2px solid var(--ink);
+    white-space:nowrap;
+  }
+  #status.ok{background:#e4f0e2;color:var(--line);}
+  #status.wait{background:#fbeecd;color:var(--amber);}
+  #status.err{background:#f6dedb;color:var(--danger);}
+  #status .dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
+  #status.wait .dot{animation:pulse 1.2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+  /* ---- bottom controls ---- */
+  #controls{
+    position:fixed;left:0;right:0;bottom:0;z-index:1000;
+    background:var(--panel);
+    border-top:3px solid var(--ink);
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    display:flex;gap:10px;align-items:center;
+  }
+  button.btn{
+    flex:1;
+    font-size:14px;font-weight:800;
+    border:2px solid var(--ink);
+    border-radius:10px;
+    padding:13px 10px;
+    background:var(--paper);
+    color:var(--ink);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  button.btn:active{transform:translateY(1px);}
+  button.btn.primary{
+    background:var(--line);color:#fff;border-color:var(--line);
+  }
+  button.btn.locate{
+    flex:0 0 52px;
+    padding:13px 0;
+  }
+  button.btn:disabled{opacity:.5;}
+
+  /* ---- legend ---- */
+  #legend{
+    position:fixed;right:12px;top:72px;z-index:1000;
+    background:var(--panel);
+    border:2px solid var(--ink);
+    border-radius:10px;
+    padding:8px 10px;
+    font-size:11px;
+    line-height:1.9;
+    color:var(--ink);
+    box-shadow:2px 2px 0 rgba(0,0,0,.15);
+  }
+  #legend div{display:flex;align-items:center;gap:6px;}
+  #legend .sw{width:16px;height:3px;border-radius:2px;flex:none;}
+
+  /* ---- loading overlay ---- */
+  #loading{
+    position:fixed;inset:0;z-index:2000;
+    background:var(--ink);
+    color:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;text-align:center;padding:30px;
+  }
+  #loading.hidden{display:none;}
+  #loading .spinner{
+    width:36px;height:36px;border-radius:50%;
+    border:4px solid rgba(246,244,238,.25);
+    border-top-color:var(--paper);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loading h2{margin:0;font-size:17px;}
+  #loading p{margin:0;font-size:13px;color:#c8d2c9;max-width:320px;}
+  #loading .err-box{
+    margin-top:6px;background:#3a2320;border:1px solid #6b352b;
+    border-radius:8px;padding:10px 14px;font-size:12px;color:#f6dedb;max-width:340px;
+  }
+  #loading button.btn{margin-top:10px;max-width:220px;}
+
+  .leaflet-control-attribution{font-size:9px;}
+  .leaflet-top.leaflet-left{ margin-top:64px; }
+
+  /* ---- login screen ---- */
+  #loginScreen{
+    position:fixed;inset:0;z-index:3000;
+    background:var(--ink);
+    color:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;padding:30px;text-align:center;
+  }
+  #loginScreen.hidden{display:none;}
+  #loginScreen h1{margin:0;font-size:20px;}
+  #loginScreen p{margin:0;color:#c8d2c9;font-size:13px;max-width:300px;}
+  #loginScreen input{
+    width:100%;max-width:280px;
+    font-size:16px;padding:13px 14px;
+    border-radius:10px;border:2px solid var(--paper);
+    background:#fff;color:var(--ink);
+  }
+  #loginScreen button{
+    width:100%;max-width:280px;
+    font-size:15px;font-weight:800;
+    padding:13px 14px;border-radius:10px;
+    border:2px solid var(--line);
+    background:var(--line);color:#fff;
+    cursor:pointer;
+  }
+  #loginScreen .loginErr{color:#f0a898;font-size:12px;min-height:16px;}
+  #loginScreen .nameField{margin-top:6px;}
+
+  /* ---- report button (floating) ---- */
+  #btnReport{
+    position:fixed;right:14px;bottom:88px;z-index:999;
+    background:var(--danger);color:#fff;
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:62px;height:62px;
+    font-size:26px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.25);
+    cursor:pointer;
+  }
+  #btnReport:active{transform:translateY(1px);}
+
+  #btnPlacePin{
+    position:fixed;right:84px;bottom:98px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:46px;height:46px;
+    font-size:19px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #btnPlacePin.active{
+    background:var(--danger);color:#fff;
+    animation:pinPulse 1s infinite;
+  }
+  @keyframes pinPulse{0%,100%{box-shadow:2px 3px 0 rgba(0,0,0,.2);}50%{box-shadow:0 0 0 6px rgba(178,58,46,.25);}}
+
+  #placeBanner{
+    position:fixed;left:10px;right:10px;top:56px;z-index:1450;
+    background:var(--ink);color:var(--paper);
+    border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.4;
+    display:none;align-items:center;gap:8px;
+  }
+  #placeBanner.show{display:flex;}
+  #placeBanner button{
+    background:var(--paper);color:var(--ink);border:none;border-radius:8px;
+    padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;flex:none;
+  }
+
+  /* ---- report modal ---- */
+  #reportModal, #listModal, #accountModal, #citizenModal{
+    position:fixed;inset:0;z-index:2500;
+    background:rgba(20,25,20,.55);
+    display:flex;align-items:flex-end;justify-content:center;
+  }
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #citizenModal.hidden{display:none;}
+  .sheet{
+    width:100%;max-width:480px;
+    background:var(--panel);
+    border-radius:16px 16px 0 0;
+    border:3px solid var(--ink);border-bottom:none;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    max-height:85vh;overflow-y:auto;
+  }
+  .sheet h3{margin:0 0 12px;font-size:16px;color:var(--ink);}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px;}
+  .field input[type=text], .field textarea{
+    width:100%;font-size:15px;padding:10px 12px;
+    border:2px solid #ccc;border-radius:8px;
+    font-family:inherit;
+  }
+  .field textarea{min-height:70px;resize:vertical;}
+  .qty-options{ display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+  .qty-option{
+    border:2px solid #ccc;border-radius:10px;padding:12px 8px;text-align:center;
+    font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;
+  }
+  .qty-option.selected{ border-color:var(--line);background:#e4f0e2;color:var(--line); }
+  .sheet-actions{display:flex;gap:10px;margin-top:6px;}
+  .sheet-actions button{flex:1;}
+  #photoPreview{margin-top:8px;max-width:100%;border-radius:8px;display:none;}
+
+  /* ---- signal markers ---- */
+  .signal-icon{
+    width:26px;height:26px;border-radius:50% 50% 50% 0;
+    background:var(--danger);border:2px solid #fff;
+    transform:rotate(-45deg);
+    box-shadow:1px 2px 3px rgba(0,0,0,.4);
+  }
+  .signal-icon.done{background:#5c8a5c;}
+  .signal-icon.erreur{background:#8a8a8a;}
+
+  /* ---- list ---- */
+  .signal-row{
+    border:2px solid var(--ink);border-radius:10px;
+    padding:10px 12px;margin-bottom:10px;
+    font-size:13px;color:var(--ink);
+  }
+  .signal-row .meta{color:var(--muted);font-size:11px;margin-bottom:4px;}
+  .signal-row .note{margin:6px 0;}
+  .signal-row img{max-width:100%;border-radius:6px;margin:6px 0;}
+  .signal-row .row-actions{display:flex;gap:8px;margin-top:8px;}
+  .status-pill{
+    display:inline-block;font-size:10px;font-weight:800;
+    padding:2px 8px;border-radius:20px;
+    background:#f6dedb;color:var(--danger);
+    text-transform:uppercase;letter-spacing:.03em;
+  }
+  .status-pill.done{background:#e4f0e2;color:var(--line);}
+  .status-pill.erreur{background:#e6e6e6;color:#666;}
+  #btnListToggle{
+    position:fixed;left:14px;bottom:88px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:52px;height:52px;
+    font-size:20px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #btnAccount{
+    position:fixed;left:14px;bottom:150px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:44px;height:44px;
+    font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #btnCitizen{
+    position:fixed;left:14px;bottom:206px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:44px;height:44px;
+    font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #citizenBadge{
+    position:absolute;top:-6px;right:-6px;
+    background:var(--danger);color:#fff;
+    border-radius:50%;min-width:18px;height:18px;
+    font-size:10px;font-weight:800;
+    display:none;align-items:center;justify-content:center;
+    padding:0 3px;
+  }
+  #citizenBadge.show{ display:flex; }
+  .citizen-row{
+    border:2px solid var(--ink);border-radius:10px;
+    padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--ink);
+  }
+  .citizen-row .meta{ color:var(--muted);font-size:11px;margin-bottom:4px; }
+  .citizen-row img{ max-width:100%;border-radius:6px;margin:6px 0; }
+  .citizen-row .row-actions{ display:flex;gap:8px;margin-top:8px; }
+  .user-row{
+    display:flex;align-items:center;justify-content:space-between;
+    border:1px solid #ddd;border-radius:8px;
+    padding:8px 10px;margin-bottom:6px;font-size:13px;
+  }
+  .user-row .role-tag{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;}
+  .user-row button{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--danger);color:var(--danger);background:#fff;}
+  #gpsWarning{
+    position:fixed;left:10px;right:10px;top:56px;z-index:1400;
+    background:#fbeecd;border:2px solid var(--amber);color:#5c4413;
+    border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.4;
+    display:none;
+  }
+  #gpsWarning.show{display:flex;align-items:flex-start;gap:8px;}
+  #gpsWarning button{
+    background:none;border:none;font-size:16px;color:#5c4413;cursor:pointer;
+    line-height:1;padding:0 2px;flex:none;
+  }
+  #syncBadge{
+    position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:1500;
+    background:var(--ink);color:var(--paper);
+    font-size:11px;font-weight:700;
+    padding:5px 12px;border-radius:20px;
+    display:none;
+  }
+  #syncBadge.show{display:block;}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <h1>🌿 Inspection Ambroisie</h1>
+  <p>Belsentes (07165) — accès réservé aux conseillers</p>
+  <input type="text" id="loginName" placeholder="Identifiant" autocomplete="off">
+  <input type="password" id="loginPass" placeholder="Mot de passe" autocomplete="off" class="nameField">
+  <button id="btnLogin">Entrer</button>
+  <div class="loginErr" id="loginErr"></div>
+</div>
+
+<div id="syncBadge">Synchronisation…</div>
+
+<div id="gpsWarning">
+  <span>📶 Position peu précise détectée (probablement pas de puce GPS sur cet appareil). Pour un suivi terrain fiable, utilisez plutôt un smartphone — sauf si cet ordinateur dispose d'un GPS ou d'une carte SIM intégrés.</span>
+  <button id="btnCloseGpsWarning" title="Fermer">✕</button>
+</div>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165</small></div>
+  <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
+</div>
+
+<div id="legend">
+  <div><span class="sw" style="background:#2f6b3a"></span> Communale (RC)</div>
+  <div><span class="sw" style="background:#c9781f"></span> Départementale (RD)</div>
+  <div><span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</div>
+  <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
+  <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
+  <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
+</div>
+
+<button id="btnListToggle" title="Liste des signalements">☰</button>
+<button id="btnReport" title="Signaler ambroisie">🌿</button>
+<button id="btnPlacePin" title="Signaler à un endroit précis sur la carte">📍</button>
+
+<div id="placeBanner">
+  <span>👉 Touchez la carte à l'endroit exact du signalement.</span>
+  <button id="btnCancelPlace">Annuler</button>
+</div>
+
+<div id="reportModal" class="hidden">
+  <div class="sheet">
+    <h3>Signaler de l'ambroisie</h3>
+    <div class="field">
+      <label>Position</label>
+      <div id="reportCoords" style="font-size:13px;color:var(--muted)">—</div>
+    </div>
+    <div class="field">
+      <label>Signalé par</label>
+      <div id="reportByName" style="font-size:14px;font-weight:700;color:var(--ink)">—</div>
+    </div>
+    <div class="field">
+      <label>Quantité estimée</label>
+      <div class="qty-options" id="reportQtyOptions">
+        <div class="qty-option" data-qty="&lt;10">Moins de 10 plants</div>
+        <div class="qty-option" data-qty="10-50">10 à 50 plants</div>
+        <div class="qty-option" data-qty="50-500">50 à 500 plants</div>
+        <div class="qty-option" data-qty="&gt;500">Plus de 500 plants</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Note complémentaire (facultatif)</label>
+      <textarea id="reportNote" placeholder="Emplacement précis, accès..."></textarea>
+    </div>
+    <div class="field">
+      <label>Photo (si besoin)</label>
+      <input type="file" id="reportPhoto" accept="image/*" capture="environment">
+      <img id="photoPreview">
+    </div>
+    <div id="reportFormErr" style="color:var(--danger);font-size:12px;min-height:16px;"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCancelReport">Annuler</button>
+      <button class="btn primary" id="btnSaveReport">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="listModal" class="hidden">
+  <div class="sheet">
+    <h3>Signalements (<span id="listCount">0</span>)</h3>
+    <div id="listContent"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseList">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<button id="btnAccount" title="Mon compte">👤</button>
+<button id="btnCitizen" title="Signalements citoyens" style="position:relative;">
+  🧑
+  <span id="citizenBadge">0</span>
+</button>
+
+<div id="citizenModal" class="hidden">
+  <div class="sheet">
+    <h3>Signalements citoyens (<span id="citizenCount">0</span>)</h3>
+    <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Signalements envoyés par les habitants via la page publique, à valider avant transfert dans la base officielle.</p>
+    <div id="citizenListContent"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseCitizen">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div id="accountModal" class="hidden">
+  <div class="sheet">
+    <h3>Mon compte</h3>
+    <div class="field">
+      <label>Identifiant connecté</label>
+      <div id="accountWhoami" style="font-size:14px;font-weight:700"></div>
+    </div>
+    <div class="field">
+      <label>Nouveau mot de passe</label>
+      <input type="text" id="newPassword" placeholder="Nouveau mot de passe">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCancelAccount">Annuler</button>
+      <button class="btn primary" id="btnChangePassword">Changer mon mot de passe</button>
+    </div>
+    <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
+      <h3>Gérer les utilisateurs (admin)</h3>
+      <div id="userListContent"></div>
+      <div class="field" style="margin-top:14px;display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label>Prénom</label>
+          <input type="text" id="newUserFirstName" placeholder="Prénom">
+        </div>
+        <div style="flex:1;">
+          <label>Nom</label>
+          <input type="text" id="newUserLastName" placeholder="Nom">
+        </div>
+      </div>
+      <div class="field">
+        <label>Identifiant de connexion</label>
+        <input type="text" id="newUserName" placeholder="ex: jdupont">
+      </div>
+      <div class="field">
+        <label>Mot de passe initial</label>
+        <input type="text" id="newUserPass" placeholder="mot de passe temporaire">
+      </div>
+      <button class="btn primary" id="btnAddUser" style="width:100%;">Créer l'utilisateur</button>
+    </div>
+    <div class="loginErr" id="accountErr"></div>
+    <button class="btn" id="btnLogout" style="width:100%;margin-top:16px;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Déconnexion</button>
+  </div>
+</div>
+
+<div id="controls">
+  <button class="btn locate" id="btnCenter" title="Centrer sur ma position">◎</button>
+  <button class="btn primary" id="btnFollow">Suivi activé</button>
+  <button class="btn" id="btnClear">Effacer trace</button>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <h2>Chargement des routes de Belsentes…</h2>
+  <p>Récupération du réseau routier communal depuis OpenStreetMap (10 à 20 secondes en général). Une fois chargées, les routes seront mises en cache et s'afficheront instantanément la prochaine fois.</p>
+  <div id="loadErr" style="display:none" class="err-box"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ================= CONFIGURATION À REMPLIR =================
+  var CONFIG = {
+    WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements",
+    APP_SECRET: "belsentes-secret-2026"   // doit être IDENTIQUE au secret APP_SECRET mis dans le Worker Cloudflare
+  };
+  // ==============================================================
+
+  // Centre approximatif de Belsentes (07165), Ardèche
+  var COMMUNE_CENTER = [44.9341, 4.4877];
+  var COMMUNE_NAME = "Belsentes";
+
+  var map = L.map('map', { zoomControl: true, attributionControl: true })
+    .setView(COMMUNE_CENTER, 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  var roadsLayer = L.layerGroup().addTo(map);
+  var trackLayer = L.layerGroup().addTo(map);
+  var otherTracksLayer = L.layerGroup().addTo(map);
+  var userMarker = null;
+  var accuracyCircle = null;
+  var trackCoords = [];
+  var trackPolyline = null;
+  var following = true;
+  var lastFix = null;
+
+  // Trace partagée : version simplifiée envoyée aux autres conseillers
+  var sharedTrackPoints = [];
+  var lastSharedPoint = null;
+  var lastSyncedPointCount = 0;
+  var SHARE_MIN_DISTANCE = 15; // mètres — n'envoie un nouveau point que si on a bougé d'au moins cette distance
+  var TRACK_SYNC_INTERVAL = 45000; // 45s
+
+  function haversineMeters(lat1, lon1, lat2, lon2){
+    var R = 6371000;
+    var toRad = function(d){ return d * Math.PI / 180; };
+    var dLat = toRad(lat2 - lat1);
+    var dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function setStatus(mode, text){
+    var el = document.getElementById('status');
+    el.className = mode;
+    document.getElementById('statusText').textContent = text;
+  }
+
+  function showLoadError(msg){
+    document.getElementById('loadErr').style.display = 'block';
+    document.getElementById('loadErr').textContent = msg;
+    var box = document.getElementById('loading');
+    var btn = document.createElement('button');
+    btn.className = 'btn primary';
+    btn.textContent = 'Réessayer';
+    btn.onclick = function(){ location.reload(); };
+    box.appendChild(btn);
+  }
+
+  function hideLoading(){
+    document.getElementById('loading').classList.add('hidden');
+  }
+
+  // ---- Charger les routes de la commune via Overpass (OpenStreetMap) ----
+  var CACHE_KEY = 'ambroisie_routes_belsentes_v3';
+  var CACHE_MAX_AGE_DAYS = 90;
+
+  // Code INSEE de Belsentes — permet d'interroger Overpass sur le contour
+  // administratif RÉEL de la commune plutôt qu'un simple rectangle, qui
+  // débordait sur les communes voisines.
+  var INSEE_CODE = "07165";
+  // Boîte englobante de secours, utilisée uniquement si la requête par
+  // contour administratif échoue ou ne renvoie rien (ex: tag manquant dans OSM).
+  var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
+
+  function loadCommuneRoads(){
+    // 1) Essayer le cache local d'abord — instantané, fonctionne hors ligne
+    try{
+      var cached = localStorage.getItem(CACHE_KEY);
+      if(cached){
+        var parsed = JSON.parse(cached);
+        var ageDays = (Date.now() - parsed.savedAt) / (1000*60*60*24);
+        if(ageDays < CACHE_MAX_AGE_DAYS){
+          drawRoads(parsed.data);
+          hideLoading();
+          // Rafraîchir en arrière-plan sans bloquer l'utilisateur
+          loadRoadsData(function(data){
+            roadsLayer.clearLayers();
+            drawRoads(data);
+            saveCache(data);
+          }, function(){ /* échec silencieux, on garde le cache */ });
+          return;
+        }
+      }
+    } catch(e){ console.warn('Lecture cache impossible', e); }
+
+    // 2) Pas de cache valide : télécharger, avec timeout et bouton d'échappement
+    var skipTimer = setTimeout(function(){
+      var box = document.getElementById('loading');
+      if(box.classList.contains('hidden')) return;
+      var p = document.getElementById('loadErr');
+      p.style.display = 'block';
+      p.textContent = 'Ça prend plus de temps que prévu (connexion lente ou serveur chargé).';
+      if(!document.getElementById('btnSkip')){
+        var skipBtn = document.createElement('button');
+        skipBtn.id = 'btnSkip';
+        skipBtn.className = 'btn';
+        skipBtn.textContent = 'Continuer sans les routes pour l\'instant';
+        skipBtn.onclick = hideLoading;
+        box.appendChild(skipBtn);
+      }
+    }, 12000);
+
+    loadRoadsData(function(data){
+      clearTimeout(skipTimer);
+      drawRoads(data);
+      saveCache(data);
+      hideLoading();
+    }, function(){
+      clearTimeout(skipTimer);
+      hideLoading();
+      showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
+    });
+  }
+
+  // Essaie d'abord le contour administratif précis (code INSEE) ; si ça échoue
+  // ou ne renvoie aucune route, se replie sur la boîte englobante (moins précis
+  // mais garantit un affichage).
+  function loadRoadsData(onSuccess, onFail){
+    var queryInsee =
+      '[out:json][timeout:40];' +
+      'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
+      'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+      'out body geom;';
+
+    // La requête par contour administratif (area) est plus lourde à calculer côté
+    // serveur que la requête bbox : on lui laisse donc plus de temps côté client
+    // aussi, sinon on coupe la requête avant que le serveur ait fini (ce qui arrivait
+    // notamment sur connexions mobiles plus lentes, provoquant un repli systématique
+    // sur le rectangle).
+    fetchFromOverpass(queryInsee, function(data){
+      if(data.elements && data.elements.length > 0){
+        onSuccess(data);
+      } else {
+        console.warn('Contour INSEE introuvable ou vide dans OSM, repli sur la boîte englobante.');
+        var queryBbox =
+          '[out:json][timeout:25]' +
+          '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+          'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+          'out body geom;';
+        fetchFromOverpass(queryBbox, onSuccess, onFail, 20000);
+      }
+    }, function(){
+      // La requête INSEE elle-même a échoué (réseau/serveur) : on tente quand même la bbox
+      var queryBbox =
+        '[out:json][timeout:25]' +
+        '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+        'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+        'out body geom;';
+      fetchFromOverpass(queryBbox, onSuccess, onFail, 20000);
+    }, 45000);
+  }
+
+  function saveCache(data){
+    try{
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data }));
+    } catch(e){ console.warn('Sauvegarde cache impossible', e); }
+  }
+
+  // ================= LIMITE COMMUNALE (contour + test dedans/dehors) =================
+  var BOUNDARY_CACHE_KEY = 'ambroisie_boundary_belsentes_v1';
+  var boundaryLayer = L.layerGroup().addTo(map);
+  var communeRings = null; // null tant que non chargé (on autorise par défaut dans ce cas)
+
+  function stitchSegments(segments){
+    var segs = segments.map(function(s){ return s.slice(); });
+    var rings = [];
+    function eq(a, b){ return Math.abs(a[0]-b[0]) < 1e-7 && Math.abs(a[1]-b[1]) < 1e-7; }
+    while(segs.length){
+      var ring = segs.shift();
+      var changed = true;
+      while(changed){
+        changed = false;
+        for(var i = 0; i < segs.length; i++){
+          var s = segs[i];
+          var ringStart = ring[0], ringEnd = ring[ring.length-1];
+          var sStart = s[0], sEnd = s[s.length-1];
+          if(eq(ringEnd, sStart)){ ring = ring.concat(s.slice(1)); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringEnd, sEnd)){ ring = ring.concat(s.slice().reverse().slice(1)); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringStart, sEnd)){ ring = s.slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringStart, sStart)){ ring = s.slice().reverse().slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
+        }
+      }
+      rings.push(ring);
+    }
+    return rings;
+  }
+
+  function pointInRing(lat, lon, ring){
+    var inside = false;
+    for(var i = 0, j = ring.length - 1; i < ring.length; j = i++){
+      var yi = ring[i][0], xi = ring[i][1];
+      var yj = ring[j][0], xj = ring[j][1];
+      var intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function isInsideCommune(lat, lon){
+    if(!communeRings) return true; // contour pas encore chargé : on n'empêche pas le signalement
+    return communeRings.some(function(ring){ return pointInRing(lat, lon, ring); });
+  }
+
+  function processBoundaryData(osmData){
+    var rel = (osmData.elements || []).find(function(e){ return e.type === 'relation'; });
+    if(!rel || !rel.members) return;
+    var segments = rel.members
+      .filter(function(m){ return m.role === 'outer' && m.geometry && m.geometry.length > 1; })
+      .map(function(m){ return m.geometry.map(function(p){ return [p.lat, p.lon]; }); });
+    if(segments.length === 0) return;
+    communeRings = stitchSegments(segments);
+    boundaryLayer.clearLayers();
+    communeRings.forEach(function(ring){
+      L.polygon(ring, { color:'#1a1a1a', weight:3, dashArray:'8 6', fill:false, opacity:0.8 }).addTo(boundaryLayer);
+    });
+  }
+
+  function loadCommuneBoundary(){
+    try{
+      var cached = localStorage.getItem(BOUNDARY_CACHE_KEY);
+      if(cached){
+        var parsed = JSON.parse(cached);
+        var ageDays = (Date.now() - parsed.savedAt) / (1000*60*60*24);
+        if(ageDays < 180){
+          processBoundaryData(parsed.data);
+        }
+      }
+    } catch(e){ console.warn('Lecture cache contour impossible', e); }
+
+    var query = '[out:json][timeout:40];relation["ref:INSEE"="' + INSEE_CODE + '"]["boundary"="administrative"];out geom;';
+    fetchFromOverpass(query, function(data){
+      processBoundaryData(data);
+      try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data })); }
+      catch(e){ console.warn('Sauvegarde cache contour impossible', e); }
+    }, function(){
+      console.warn('Impossible de charger le contour communal (limite non affichée, vérification dedans/dehors désactivée).');
+    }, 40000);
+  }
+
+  var HORS_TERRITOIRE_MSG = 'Ce point semble situé en dehors du territoire de Belsentes.\n\n' +
+    'Merci de faire ce signalement directement sur la plateforme nationale :\n' +
+    'https://signalement-ambroisie.atlasante.fr/dashboard';
+
+  function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
+    timeoutMs = timeoutMs || 20000;
+    var endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.openstreetmap.ru/api/interpreter'
+    ];
+
+    function tryEndpoint(i){
+      if(i >= endpoints.length){ onFail(); return; }
+      var controller = new AbortController();
+      var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+      fetch(endpoints[i] + '?data=' + encodeURIComponent(query), { signal: controller.signal })
+        .then(function(r){
+          clearTimeout(to);
+          if(!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data){ onSuccess(data); })
+        .catch(function(err){
+          clearTimeout(to);
+          console.warn('Overpass endpoint failed:', endpoints[i], err);
+          tryEndpoint(i + 1);
+        });
+    }
+    tryEndpoint(0);
+  }
+
+  // Classification approximative RC / RD / RN, basée sur le numéro de route (ref),
+  // OSM n'ayant pas de tag direct "gestionnaire de la voie".
+  function classifyRoad(tags){
+    var ref = (tags.ref || '').trim();
+    if(/^D\s?\d/i.test(ref)) return 'RD';
+    if(/^N\s?\d/i.test(ref)) return 'RN';
+    if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    return 'RC';
+  }
+
+  function roadStyle(highwayType, roadClass){
+    var w = 4, dash = null, color = '#2f6b3a'; // vert par défaut : route communale (RC)
+
+    if(roadClass === 'RD'){
+      color = '#c9781f'; // orange : départementale, pas de notre ressort
+      w = 5;
+    } else if(roadClass === 'RN'){
+      color = '#8a3fbf'; // violet : nationale
+      w = 6;
+    } else {
+      // Style RC selon le type de voie
+      if(highwayType === 'unclassified' || highwayType === 'residential'){
+        w = 4;
+      } else if(highwayType === 'tertiary' || highwayType === 'secondary' || highwayType === 'primary'){
+        w = 5;
+      } else if(highwayType === 'track'){
+        w = 3; dash = '2 6';
+      } else if(highwayType === 'service'){
+        w = 3; dash = '1 5';
+      }
+    }
+    return { color: color, weight: w, opacity: 0.85, dashArray: dash };
+  }
+
+  var roadBounds = null;
+  var hasCenteredOnce = false;
+
+  function drawRoads(osmData){
+    if(!osmData.elements || osmData.elements.length === 0){
+      showLoadError('Aucune route trouvée autour de Belsentes dans OpenStreetMap pour le moment.');
+      return;
+    }
+    var bounds = [];
+    osmData.elements.forEach(function(el){
+      if(el.type !== 'way' || !el.geometry) return;
+      var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
+      var tags = el.tags || {};
+      var roadClass = classifyRoad(tags);
+      var style = roadStyle(tags.highway, roadClass);
+      var line = L.polyline(latlngs, style);
+      var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
+      var classLabel = roadClass === 'RD' ? 'Départementale (RD)' : (roadClass === 'RN' ? 'Nationale (RN)' : 'Communale (RC)');
+      line.bindPopup('<b>' + label + '</b><br>' + classLabel + (tags.ref ? ' — ' + tags.ref : ''));
+      line.addTo(roadsLayer);
+      latlngs.forEach(function(p){ bounds.push(p); });
+    });
+    if(bounds.length){
+      roadBounds = L.latLngBounds(bounds);
+      if(!hasCenteredOnce){
+        map.fitBounds(roadBounds, { padding: [30, 30] });
+        hasCenteredOnce = true;
+      }
+    }
+  }
+
+  // ---- GPS tracking ----
+  var userIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:18px;height:18px;border-radius:50%;background:#1c6fd9;border:3px solid #fff;box-shadow:0 0 0 2px rgba(28,111,217,.4);"></div>',
+    iconSize: [18,18],
+    iconAnchor: [9,9]
+  });
+
+  function onGpsSuccess(pos){
+    var lat = pos.coords.latitude;
+    var lon = pos.coords.longitude;
+    var acc = pos.coords.accuracy;
+    lastFix = [lat, lon];
+
+    setStatus('ok', 'GPS actif · précision ' + Math.round(acc) + ' m');
+    checkGpsAccuracyWarning(acc);
+
+    if(!userMarker){
+      userMarker = L.marker([lat, lon], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+    } else {
+      userMarker.setLatLng([lat, lon]);
+    }
+
+    if(!accuracyCircle){
+      accuracyCircle = L.circle([lat, lon], { radius: acc, color:'#1c6fd9', weight:1, fillOpacity:0.08 }).addTo(map);
+    } else {
+      accuracyCircle.setLatLng([lat, lon]);
+      accuracyCircle.setRadius(acc);
+    }
+
+    // trace parcourue (affichage local, tous les points)
+    trackCoords.push([lat, lon]);
+    if(!trackPolyline){
+      trackPolyline = L.polyline(trackCoords, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
+    } else {
+      trackPolyline.setLatLngs(trackCoords);
+    }
+
+    // trace partagée (envoyée aux autres conseillers, simplifiée par distance)
+    if(!lastSharedPoint || haversineMeters(lastSharedPoint[0], lastSharedPoint[1], lat, lon) > SHARE_MIN_DISTANCE){
+      sharedTrackPoints.push([lat, lon]);
+      lastSharedPoint = [lat, lon];
+    }
+
+    if(following){
+      map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate:true });
+    }
+  }
+
+  var ACCURACY_WARNING_THRESHOLD = 300; // mètres
+  var gpsWarningDismissed = false;
+
+  function checkGpsAccuracyWarning(acc){
+    var box = document.getElementById('gpsWarning');
+    if(gpsWarningDismissed) return;
+    if(acc > ACCURACY_WARNING_THRESHOLD){
+      box.classList.add('show');
+    } else {
+      box.classList.remove('show');
+    }
+  }
+
+  document.getElementById('btnCloseGpsWarning').addEventListener('click', function(){
+    gpsWarningDismissed = true;
+    document.getElementById('gpsWarning').classList.remove('show');
+  });
+
+  function onGpsError(err){
+    var msg = 'GPS indisponible';
+    if(err.code === 1) msg = 'Accès à la position refusé';
+    else if(err.code === 2) msg = 'Position indisponible';
+    else if(err.code === 3) msg = 'Délai GPS dépassé';
+    setStatus('err', msg);
+  }
+
+  function startGps(){
+    if(!('geolocation' in navigator)){
+      setStatus('err', 'GPS non supporté par ce navigateur');
+      return;
+    }
+    navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 15000
+    });
+  }
+
+  // ---- Controls ----
+  document.getElementById('btnCenter').addEventListener('click', function(){
+    if(lastFix){
+      map.setView(lastFix, 17, { animate:true });
+      following = true;
+      updateFollowBtn();
+    } else if(roadBounds){
+      map.fitBounds(roadBounds, { padding:[30,30] });
+    }
+  });
+
+  var btnFollow = document.getElementById('btnFollow');
+  function updateFollowBtn(){
+    btnFollow.textContent = following ? 'Suivi activé' : 'Suivi coupé';
+    btnFollow.className = following ? 'btn primary' : 'btn';
+  }
+  btnFollow.addEventListener('click', function(){
+    following = !following;
+    updateFollowBtn();
+    if(following && lastFix){ map.setView(lastFix, Math.max(map.getZoom(),16)); }
+  });
+
+  // Couper le suivi auto si l'utilisateur déplace la carte manuellement
+  map.on('dragstart', function(){
+    if(following){ following = false; updateFollowBtn(); }
+  });
+
+  document.getElementById('btnClear').addEventListener('click', function(){
+    if(confirm('Effacer la trace du trajet parcouru ?')){
+      trackCoords = [];
+      if(trackPolyline){ trackLayer.clearLayers(); trackPolyline = null; }
+    }
+  });
+
+  // ================= AUTHENTIFICATION MULTI-COMPTES =================
+  var currentUser = null;   // identifiant connecté
+  var currentRole = null;   // 'admin' ou 'user'
+  var users = [];           // [{username, passwordHash, role}]
+  var usersSha = null;
+
+  var DEFAULT_ADMIN_USERNAME = 'clement.thieuleux';
+  var DEFAULT_ADMIN_PASSWORD = 'azerty';
+
+  // Si un compte n'a pas de prénom/nom enregistré, on en déduit un raisonnable
+  // à partir de l'identifiant (ex: "jean.dupont" -> "Jean Dupont").
+  function deriveNameFromUsername(username){
+    var parts = (username || '').split(/[._\-\s]+/).filter(Boolean);
+    if(parts.length >= 2){
+      return parts.map(function(p){ return p.charAt(0).toUpperCase() + p.slice(1); }).join(' ');
+    }
+    return username;
+  }
+  function getUserFullName(username){
+    var u = users.find(function(x){ return x.username === username; });
+    if(u && (u.firstName || u.lastName)){
+      return ((u.firstName || '') + ' ' + (u.lastName || '')).trim();
+    }
+    return deriveNameFromUsername(username);
+  }
+
+  async function sha256Hex(text){
+    var enc = new TextEncoder().encode(text);
+    var buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(function(b){
+      return b.toString(16).padStart(2,'0');
+    }).join('');
+  }
+
+  function usersApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/users'); }
+
+  function fetchUsers(){
+    return fetch(usersApiUrl(), {
+      method: 'GET',
+      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      users = data.items || [];
+      usersSha = data.sha || null;
+      return users;
+    });
+  }
+
+  function saveUsers(){
+    return fetch(usersApiUrl(), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Secret': CONFIG.APP_SECRET
+      },
+      body: JSON.stringify({ items: users, sha: usersSha })
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){ usersSha = data.sha; });
+  }
+
+  // ================= TRACÉS PARTAGÉS (voir où les autres sont passés) =================
+  function tracksApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/tracks'); }
+
+  async function syncTracks(){
+    if(!currentUser) return;
+    try{
+      var resp = await fetch(tracksApiUrl(), {
+        method: 'GET',
+        headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+      });
+      if(!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      var tracks = data.items || [];
+      var sha = data.sha || null;
+
+      // Si on a de nouveaux points à partager, on met à jour notre entrée
+      if(sharedTrackPoints.length > lastSyncedPointCount){
+        var mine = tracks.find(function(t){ return t.username === currentUser; });
+        if(mine){
+          mine.points = sharedTrackPoints;
+          mine.updatedAt = new Date().toISOString();
+        } else {
+          tracks.push({ username: currentUser, points: sharedTrackPoints.slice(), updatedAt: new Date().toISOString() });
+        }
+        var putResp = await fetch(tracksApiUrl(), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
+          body: JSON.stringify({ items: tracks, sha: sha })
+        });
+        if(putResp.ok){
+          lastSyncedPointCount = sharedTrackPoints.length;
+        }
+      }
+
+      renderOtherTracks(tracks);
+    } catch(e){
+      console.warn('Erreur synchronisation des tracés', e);
+    }
+  }
+
+  var TRACK_COLORS = ['#1c6fd9', '#7a4fd1', '#c98a1f', '#2f9e8f', '#d1477a', '#5c8a5c'];
+
+  function renderOtherTracks(tracks){
+    otherTracksLayer.clearLayers();
+    var idx = 0;
+    tracks.forEach(function(t){
+      if(t.username === currentUser) return;
+      if(!t.points || t.points.length < 2) return;
+      var color = TRACK_COLORS[idx % TRACK_COLORS.length];
+      idx++;
+      var line = L.polyline(t.points, { color: color, weight: 4, opacity: 0.65, dashArray: '6 6' });
+      var lastSeen = t.updatedAt ? new Date(t.updatedAt).toLocaleTimeString('fr-FR') : '';
+      line.bindTooltip(escapeHtml(t.username) + (lastSeen ? ' · vu ' + lastSeen : ''), { sticky: true });
+      line.addTo(otherTracksLayer);
+    });
+  }
+
+  var trackSyncIntervalId = null;
+
+  function startTrackSync(){
+    syncTracks();
+    trackSyncIntervalId = setInterval(syncTracks, TRACK_SYNC_INTERVAL);
+  }
+
+  // ================= SIGNALEMENTS CITOYENS (à valider) =================
+  function citizenApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/citizen'); }
+  var citizenReports = [];
+  var citizenSha = null;
+  var citizenSyncIntervalId = null;
+
+  function loadCitizenReports(silent){
+    return fetch(citizenApiUrl(), {
+      method: 'GET',
+      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+    })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){
+      citizenReports = data.items || [];
+      citizenSha = data.sha || null;
+      updateCitizenBadge();
+      renderCitizenList();
+    })
+    .catch(function(e){ console.warn('Erreur chargement signalements citoyens', e); });
+  }
+
+  function saveCitizenReports(){
+    return fetch(citizenApiUrl(), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
+      body: JSON.stringify({ items: citizenReports, sha: citizenSha })
+    })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){ citizenSha = data.sha; });
+  }
+
+  function updateCitizenBadge(){
+    var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; }).length;
+    var badge = document.getElementById('citizenBadge');
+    if(pending > 0){
+      badge.textContent = pending;
+      badge.classList.add('show');
+    } else {
+      badge.classList.remove('show');
+    }
+  }
+
+  function renderCitizenList(){
+    var content = document.getElementById('citizenListContent');
+    var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; })
+      .sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    document.getElementById('citizenCount').textContent = pending.length;
+
+    if(pending.length === 0){
+      content.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement citoyen en attente.</p>';
+      return;
+    }
+    content.innerHTML = pending.map(function(r){
+      var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+      return '<div class="citizen-row">' +
+        '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
+        '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
+        '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+        (r.photo ? '<img src="' + r.photo + '">' : '') +
+        '<div class="row-actions">' +
+          '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+          '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
+          '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    content.querySelectorAll('[data-cgoto]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var r = citizenReports.find(function(x){ return x.id === btn.getAttribute('data-cgoto'); });
+        if(r){
+          document.getElementById('citizenModal').classList.add('hidden');
+          following = false; updateFollowBtn();
+          map.setView([r.lat, r.lon], 17, { animate:true });
+        }
+      });
+    });
+    content.querySelectorAll('[data-cvalidate]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-cvalidate');
+        var r = citizenReports.find(function(x){ return x.id === id; });
+        if(!r) return;
+        var qtyLabel = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' }[r.quantity] || r.quantity;
+        var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+        var entry = {
+          id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+          lat: r.lat,
+          lon: r.lon,
+          name: fullName + ' (signalement citoyen ' + (r.refNumber || '') + ')',
+          note: 'Quantité estimée : ' + qtyLabel,
+          photo: r.photo || null,
+          date: r.date,
+          classification: 'valide',
+          traite: false,
+          isErreur: false
+        };
+        signalements.push(entry);
+        r.status = 'valide';
+        renderSignalMarkers();
+        renderList();
+        updateCitizenBadge();
+        renderCitizenList();
+        saveSignalements();
+        saveCitizenReports();
+      });
+    });
+    content.querySelectorAll('[data-creject]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-creject');
+        var r = citizenReports.find(function(x){ return x.id === id; });
+        if(!r) return;
+        if(!confirm('Rejeter ce signalement citoyen ? Il ne sera pas transféré et disparaîtra de la carte publique.')) return;
+        r.status = 'rejete';
+        updateCitizenBadge();
+        renderCitizenList();
+        saveCitizenReports();
+      });
+    });
+  }
+
+  function startCitizenSync(){
+    loadCitizenReports();
+    citizenSyncIntervalId = setInterval(function(){ loadCitizenReports(true); }, 20000);
+  }
+
+  document.getElementById('btnCitizen').addEventListener('click', function(){
+    renderCitizenList();
+    document.getElementById('citizenModal').classList.remove('hidden');
+    loadCitizenReports(true);
+  });
+  document.getElementById('btnCloseCitizen').addEventListener('click', function(){
+    document.getElementById('citizenModal').classList.add('hidden');
+  });
+
+  async function initAuth(){
+    var savedUser = localStorage.getItem('ambroisie_user');
+    var savedRole = localStorage.getItem('ambroisie_role');
+
+    // Charger la liste des comptes ; si elle n'existe pas encore, créer le compte admin par défaut
+    try{
+      await fetchUsers();
+      if(users.length === 0){
+        var hash = await sha256Hex(DEFAULT_ADMIN_PASSWORD);
+        var derived = deriveNameFromUsername(DEFAULT_ADMIN_USERNAME).split(' ');
+        users = [{ username: DEFAULT_ADMIN_USERNAME, passwordHash: hash, role: 'admin', firstName: derived[0] || '', lastName: derived.slice(1).join(' ') || '' }];
+        await saveUsers();
+      }
+    } catch(e){
+      console.error('Erreur chargement comptes', e);
+      document.getElementById('loginErr').textContent =
+        'Impossible de contacter le serveur de comptes. Vérifiez votre connexion.';
+    }
+
+    if(savedUser && savedRole){
+      currentUser = savedUser;
+      currentRole = savedRole;
+      document.getElementById('loginScreen').classList.add('hidden');
+      setupAccountUI();
+      return;
+    }
+    document.getElementById('btnLogin').addEventListener('click', tryLogin);
+    document.getElementById('loginPass').addEventListener('keydown', function(e){
+      if(e.key === 'Enter') tryLogin();
+    });
+  }
+
+  async function tryLogin(){
+    var name = document.getElementById('loginName').value.trim();
+    var pass = document.getElementById('loginPass').value;
+    var err = document.getElementById('loginErr');
+    err.textContent = '';
+    if(!name || !pass){ err.textContent = 'Identifiant et mot de passe requis.'; return; }
+
+    var hash = await sha256Hex(pass);
+    var found = users.find(function(u){ return u.username === name && u.passwordHash === hash; });
+    if(!found){ err.textContent = 'Identifiant ou mot de passe incorrect.'; return; }
+
+    currentUser = found.username;
+    currentRole = found.role;
+    localStorage.setItem('ambroisie_user', currentUser);
+    localStorage.setItem('ambroisie_role', currentRole);
+    document.getElementById('loginScreen').classList.add('hidden');
+    setupAccountUI();
+  }
+
+  function logout(){
+    localStorage.removeItem('ambroisie_user');
+    localStorage.removeItem('ambroisie_role');
+    if(trackSyncIntervalId){ clearInterval(trackSyncIntervalId); trackSyncIntervalId = null; }
+    if(signalSyncIntervalId){ clearInterval(signalSyncIntervalId); signalSyncIntervalId = null; }
+    if(citizenSyncIntervalId){ clearInterval(citizenSyncIntervalId); citizenSyncIntervalId = null; }
+    currentUser = null;
+    currentRole = null;
+    document.getElementById('accountModal').classList.add('hidden');
+    document.getElementById('loginName').value = '';
+    document.getElementById('loginPass').value = '';
+    document.getElementById('loginErr').textContent = '';
+    document.getElementById('loginScreen').classList.remove('hidden');
+  }
+
+  // ================= COMPTE / ADMIN =================
+  function setupAccountUI(){
+    document.getElementById('accountWhoami').textContent = currentUser + (currentRole === 'admin' ? ' (administrateur)' : '');
+    document.getElementById('adminSection').style.display = currentRole === 'admin' ? 'block' : 'none';
+    if(currentRole === 'admin') renderUserList();
+    startTrackSync();
+    startSignalSync();
+    startCitizenSync();
+  }
+
+  document.getElementById('btnAccount').addEventListener('click', function(){
+    document.getElementById('accountErr').textContent = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newUserName').value = '';
+    document.getElementById('newUserPass').value = '';
+    if(currentRole === 'admin') renderUserList();
+    document.getElementById('accountModal').classList.remove('hidden');
+  });
+  document.getElementById('btnCancelAccount').addEventListener('click', function(){
+    document.getElementById('accountModal').classList.add('hidden');
+  });
+
+  document.getElementById('btnLogout').addEventListener('click', function(){
+    if(confirm('Se déconnecter ? Vous devrez ressaisir votre identifiant et mot de passe.')){
+      logout();
+    }
+  });
+
+  document.getElementById('btnChangePassword').addEventListener('click', async function(){
+    var np = document.getElementById('newPassword').value;
+    var err = document.getElementById('accountErr');
+    if(!np || np.length < 4){ err.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
+    var me = users.find(function(u){ return u.username === currentUser; });
+    if(!me){ err.textContent = 'Compte introuvable.'; return; }
+    me.passwordHash = await sha256Hex(np);
+    try{
+      await saveUsers();
+      err.style.color = 'var(--line)';
+      err.textContent = 'Mot de passe mis à jour.';
+    } catch(e){
+      err.style.color = '';
+      err.textContent = 'Erreur lors de l\'enregistrement.';
+    }
+  });
+
+  function renderUserList(){
+    var box = document.getElementById('userListContent');
+    box.innerHTML = users.map(function(u){
+      var canDelete = u.username !== currentUser && !(u.role === 'admin' && users.filter(function(x){return x.role==='admin';}).length <= 1);
+      return '<div class="user-row">' +
+        '<span>' + escapeHtml(getUserFullName(u.username)) + ' (' + escapeHtml(u.username) + ') <span class="role-tag">' + (u.role === 'admin' ? 'Admin' : 'Conseiller') + '</span></span>' +
+        (canDelete ? '<button data-del="' + escapeHtml(u.username) + '">Supprimer</button>' : '') +
+      '</div>';
+    }).join('');
+    box.querySelectorAll('[data-del]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var uname = btn.getAttribute('data-del');
+        if(!confirm('Supprimer l\'utilisateur ' + uname + ' ?')) return;
+        users = users.filter(function(u){ return u.username !== uname; });
+        try{ await saveUsers(); renderUserList(); }
+        catch(e){ alert('Erreur lors de la suppression.'); }
+      });
+    });
+  }
+
+  document.getElementById('btnAddUser').addEventListener('click', async function(){
+    var uname = document.getElementById('newUserName').value.trim();
+    var upass = document.getElementById('newUserPass').value;
+    var ufirst = document.getElementById('newUserFirstName').value.trim();
+    var ulast = document.getElementById('newUserLastName').value.trim();
+    var err = document.getElementById('accountErr');
+    if(!uname || !upass || !ufirst || !ulast){ err.textContent = 'Prénom, nom, identifiant et mot de passe requis.'; return; }
+    if(users.find(function(u){ return u.username === uname; })){ err.textContent = 'Cet identifiant existe déjà.'; return; }
+    var hash = await sha256Hex(upass);
+    users.push({ username: uname, passwordHash: hash, role: 'user', firstName: ufirst, lastName: ulast });
+    try{
+      await saveUsers();
+      document.getElementById('newUserName').value = '';
+      document.getElementById('newUserPass').value = '';
+      document.getElementById('newUserFirstName').value = '';
+      document.getElementById('newUserLastName').value = '';
+      err.style.color = 'var(--line)';
+      err.textContent = 'Utilisateur créé.';
+      renderUserList();
+    } catch(e){
+      err.style.color = '';
+      err.textContent = 'Erreur lors de la création.';
+    }
+  });
+
+  // ================= STOCKAGE PARTAGÉ (via Cloudflare Worker) =================
+  var signalements = [];
+  var ghFileSha = null; // nécessaire pour mettre à jour sans écraser en conflit
+
+  function showSync(msg){
+    var b = document.getElementById('syncBadge');
+    b.textContent = msg;
+    b.classList.add('show');
+  }
+  function hideSync(){
+    document.getElementById('syncBadge').classList.remove('show');
+  }
+
+  function loadSignalements(silent){
+    if(!silent) showSync('Synchronisation…');
+    fetch(CONFIG.WORKER_URL, {
+      method: 'GET',
+      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      signalements = data.items || [];
+      ghFileSha = data.sha || null;
+      renderSignalMarkers();
+      renderList();
+      if(!silent) hideSync();
+    })
+    .catch(function(e){
+      console.error('Erreur chargement signalements', e);
+      if(!silent){
+        hideSync();
+        showSync('Hors ligne — données locales uniquement');
+        setTimeout(hideSync, 3000);
+      }
+    });
+  }
+
+  var SIGNAL_SYNC_INTERVAL = 15000; // 15s
+  var signalSyncIntervalId = null;
+
+  function startSignalSync(){
+    signalSyncIntervalId = setInterval(function(){ loadSignalements(true); }, SIGNAL_SYNC_INTERVAL);
+  }
+
+  function saveSignalements(){
+    showSync('Enregistrement…');
+    return fetch(CONFIG.WORKER_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Secret': CONFIG.APP_SECRET
+      },
+      body: JSON.stringify({ items: signalements, sha: ghFileSha })
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      ghFileSha = data.sha;
+      hideSync();
+    })
+    .catch(function(e){
+      console.error('Erreur sauvegarde', e);
+      hideSync();
+      alert('Impossible d\'enregistrer. Vérifiez votre connexion. Le signalement reste visible localement pour l\'instant.');
+    });
+  }
+
+  // ================= MARQUEURS DE SIGNALEMENT =================
+  var signalMarkersLayer = L.layerGroup();
+  var pendingReportCoords = null;
+
+  // Classification transmise à FREDON, indépendante du fait que l'ambroisie
+  // ait été physiquement traitée ou non (voir getTraite) et du marquage erreur.
+  var CLASSIFICATIONS = {
+    'valide':        { label: 'Validé',           color: '#2f6b3a' },
+    'en_cours':      { label: 'En cours',         color: '#c98a1f' },
+    'doublon':       { label: 'Doublon',          color: '#5c6bd6' },
+    'pas_ambroisie': { label: "Pas d'ambroisie",  color: '#8a8a8a' }
+  };
+
+  // Compatibilité avec les anciens signalements enregistrés avant l'ajout de
+  // ce système (qui utilisaient un simple champ status: 'a_traiter'/'traite'/'erreur').
+  function getClassification(s){ return s.classification || 'valide'; }
+  function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
+  function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
+
+  function signalIcon(entry){
+    var clsInfo = CLASSIFICATIONS[getClassification(entry)] || CLASSIFICATIONS['valide'];
+    var opacity = getTraite(entry) ? 0.45 : 1;
+    return L.divIcon({
+      className: '',
+      html: '<div class="signal-icon" style="background:' + clsInfo.color + ';opacity:' + opacity + ';"></div>',
+      iconSize: [26,26],
+      iconAnchor: [13,26]
+    });
+  }
+
+  function renderSignalMarkers(){
+    signalMarkersLayer.clearLayers();
+    signalements.forEach(function(s){
+      // Les signalements marqués "erreur" (faux positif) sont masqués de la carte,
+      // mais restent consultables dans l'onglet dédié de la liste.
+      if(getErreur(s)) return;
+      var m = L.marker([s.lat, s.lon], { icon: signalIcon(s) });
+      var clsInfo = CLASSIFICATIONS[getClassification(s)] || CLASSIFICATIONS['valide'];
+      var popupHtml = '<b>' + escapeHtml(s.name || 'Conseiller') + '</b><br>' +
+        new Date(s.date).toLocaleString('fr-FR') +
+        (s.note ? '<br>' + escapeHtml(s.note) : '') +
+        '<br>' + clsInfo.label + ' · ' + (getTraite(s) ? 'Traité' : 'Non traité');
+      m.bindPopup(popupHtml);
+      m.addTo(signalMarkersLayer);
+    });
+  }
+  signalMarkersLayer.addTo(map);
+
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ---- Ouverture du formulaire de signalement ----
+  var selectedQtyInternal = null;
+
+  function openReportForm(lat, lon){
+    pendingReportCoords = { lat: lat, lon: lon };
+    document.getElementById('reportCoords').textContent = lat.toFixed(5) + ', ' + lon.toFixed(5);
+    document.getElementById('reportByName').textContent = getUserFullName(currentUser);
+    selectedQtyInternal = null;
+    document.querySelectorAll('#reportQtyOptions .qty-option').forEach(function(el){ el.classList.remove('selected'); });
+    document.getElementById('reportNote').value = '';
+    document.getElementById('reportPhoto').value = '';
+    document.getElementById('photoPreview').style.display = 'none';
+    document.getElementById('reportFormErr').textContent = '';
+    document.getElementById('reportModal').classList.remove('hidden');
+  }
+
+  document.querySelectorAll('#reportQtyOptions .qty-option').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#reportQtyOptions .qty-option').forEach(function(o){ o.classList.remove('selected'); });
+      el.classList.add('selected');
+      selectedQtyInternal = el.getAttribute('data-qty');
+    });
+  });
+
+  document.getElementById('btnReport').addEventListener('click', function(){
+    if(!lastFix){
+      alert('Position GPS pas encore disponible, patientez quelques secondes.');
+      return;
+    }
+    if(!isInsideCommune(lastFix[0], lastFix[1])){
+      alert(HORS_TERRITOIRE_MSG);
+      return;
+    }
+    openReportForm(lastFix[0], lastFix[1]);
+  });
+
+  document.getElementById('btnCancelReport').addEventListener('click', function(){
+    document.getElementById('reportModal').classList.add('hidden');
+  });
+
+  // ---- Placement manuel sur la carte (pour signaler un endroit sans y être) ----
+  var placingReport = false;
+
+  function enterPlacingMode(){
+    placingReport = true;
+    following = false;
+    updateFollowBtn();
+    document.getElementById('btnPlacePin').classList.add('active');
+    document.getElementById('placeBanner').classList.add('show');
+    map.getContainer().style.cursor = 'crosshair';
+  }
+  function exitPlacingMode(){
+    placingReport = false;
+    document.getElementById('btnPlacePin').classList.remove('active');
+    document.getElementById('placeBanner').classList.remove('show');
+    map.getContainer().style.cursor = '';
+  }
+
+  document.getElementById('btnPlacePin').addEventListener('click', function(){
+    if(placingReport){ exitPlacingMode(); return; }
+    enterPlacingMode();
+  });
+  document.getElementById('btnCancelPlace').addEventListener('click', function(){
+    exitPlacingMode();
+  });
+
+  map.on('click', function(e){
+    if(!placingReport) return;
+    exitPlacingMode();
+    if(!isInsideCommune(e.latlng.lat, e.latlng.lng)){
+      alert(HORS_TERRITOIRE_MSG);
+      return;
+    }
+    openReportForm(e.latlng.lat, e.latlng.lng);
+  });
+
+  // ---- Compression de la photo côté navigateur avant sauvegarde ----
+  var photoDataUrl = null;
+  document.getElementById('reportPhoto').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(evt){
+      var img = new Image();
+      img.onload = function(){
+        var maxDim = 900;
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        photoDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        var prev = document.getElementById('photoPreview');
+        prev.src = photoDataUrl;
+        prev.style.display = 'block';
+      };
+      img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  var QTY_LABELS = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' };
+
+  document.getElementById('btnSaveReport').addEventListener('click', function(){
+    if(!pendingReportCoords) return;
+    var err = document.getElementById('reportFormErr');
+    if(!selectedQtyInternal){ err.textContent = 'Merci d\'indiquer une quantité estimée.'; return; }
+    var extraNote = document.getElementById('reportNote').value.trim();
+    var entry = {
+      id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      lat: pendingReportCoords.lat,
+      lon: pendingReportCoords.lon,
+      name: getUserFullName(currentUser),
+      note: 'Quantité estimée : ' + QTY_LABELS[selectedQtyInternal] + (extraNote ? ' — ' + extraNote : ''),
+      photo: photoDataUrl || null,
+      date: new Date().toISOString(),
+      classification: 'valide', // un signalement fait directement par un conseiller est considéré validé d'emblée
+      traite: false,
+      isErreur: false
+    };
+    signalements.push(entry);
+    renderSignalMarkers();
+    renderList();
+    document.getElementById('reportModal').classList.add('hidden');
+    photoDataUrl = null;
+    saveSignalements();
+  });
+
+  // ================= LISTE DES SIGNALEMENTS =================
+  var listShowErrors = false;
+
+  function renderList(){
+    var content = document.getElementById('listContent');
+    var activeCount = signalements.filter(function(s){ return !getErreur(s); }).length;
+    var errorCount = signalements.length - activeCount;
+    document.getElementById('listCount').textContent = activeCount;
+
+    var toggleBar = '<div style="margin-bottom:10px;">' +
+      '<button class="btn" id="btnToggleErrors" style="font-size:12px;padding:7px 10px;">' +
+        (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
+      '</button></div>';
+
+    var visible = signalements.filter(function(s){ return listShowErrors || !getErreur(s); });
+
+    if(visible.length === 0){
+      content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>';
+      wireToggleErrorsButton();
+      return;
+    }
+    var sorted = visible.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    content.innerHTML = toggleBar + sorted.map(function(s){
+      var clsKey = getClassification(s);
+      var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
+      var isTraite = getTraite(s);
+      var isErreur = getErreur(s);
+      var canDelete = currentRole === 'admin';
+      var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
+        return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
+      }).join('');
+      return '<div class="signal-row">' +
+        '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
+        '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
+        (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
+        '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
+        '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
+        (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
+        (s.photo ? '<img src="' + s.photo + '">' : '') +
+        '<div class="row-actions" style="flex-wrap:wrap;">' +
+          '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+          '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
+          '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
+          '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
+          (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    wireToggleErrorsButton();
+
+    content.querySelectorAll('[data-goto]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-goto');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          document.getElementById('listModal').classList.add('hidden');
+          following = false; updateFollowBtn();
+          map.setView([s.lat, s.lon], 17, { animate:true });
+        }
+      });
+    });
+    content.querySelectorAll('[data-classify]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        var id = sel.getAttribute('data-classify');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = sel.value;
+          s.traite = getTraite(s);
+          s.isErreur = getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-toggletraite]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-toggletraite');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = getClassification(s);
+          s.traite = !getTraite(s);
+          s.isErreur = getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-erreur]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-erreur');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = getClassification(s);
+          s.traite = getTraite(s);
+          s.isErreur = !getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-delete]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-delete');
+        if(!confirm('Supprimer définitivement ce signalement ? Cette action est irréversible.')) return;
+        signalements = signalements.filter(function(x){ return x.id !== id; });
+        renderSignalMarkers();
+        renderList();
+        saveSignalements();
+      });
+    });
+  }
+
+  function wireToggleErrorsButton(){
+    var btn = document.getElementById('btnToggleErrors');
+    if(btn){
+      btn.addEventListener('click', function(){
+        listShowErrors = !listShowErrors;
+        renderList();
+      });
+    }
+  }
+
+  document.getElementById('btnListToggle').addEventListener('click', function(){
+    renderList();
+    document.getElementById('listModal').classList.remove('hidden');
+    loadSignalements(true); // rafraîchit immédiatement dès l'ouverture, sans attendre le cycle automatique
+  });
+  document.getElementById('btnCloseList').addEventListener('click', function(){
+    document.getElementById('listModal').classList.add('hidden');
+  });
+
+  // Rafraîchissement instantané quand on revient sur l'appli (ex: après avoir
+  // changé d'onglet ou mis Safari en arrière-plan), sans attendre le prochain
+  // cycle des 15 secondes.
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && currentUser){
+      loadSignalements(true);
+      syncTracks();
+    }
+  });
+
+  // ---- Boot ----
+  initAuth();
+  loadCommuneRoads();
+  loadCommuneBoundary();
+  startGps();
+  loadSignalements();
+
+})();
+</script>
+</body>
+</html>
