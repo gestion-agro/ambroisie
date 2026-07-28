@@ -130,9 +130,136 @@
   #loading button.btn{margin-top:10px;max-width:220px;}
 
   .leaflet-control-attribution{font-size:9px;}
+
+  /* ---- login screen ---- */
+  #loginScreen{
+    position:fixed;inset:0;z-index:3000;
+    background:var(--ink);
+    color:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;padding:30px;text-align:center;
+  }
+  #loginScreen.hidden{display:none;}
+  #loginScreen h1{margin:0;font-size:20px;}
+  #loginScreen p{margin:0;color:#c8d2c9;font-size:13px;max-width:300px;}
+  #loginScreen input{
+    width:100%;max-width:280px;
+    font-size:16px;padding:13px 14px;
+    border-radius:10px;border:2px solid var(--paper);
+    background:#fff;color:var(--ink);
+  }
+  #loginScreen button{
+    width:100%;max-width:280px;
+    font-size:15px;font-weight:800;
+    padding:13px 14px;border-radius:10px;
+    border:2px solid var(--line);
+    background:var(--line);color:#fff;
+    cursor:pointer;
+  }
+  #loginScreen .loginErr{color:#f0a898;font-size:12px;min-height:16px;}
+  #loginScreen .nameField{margin-top:6px;}
+
+  /* ---- report button (floating) ---- */
+  #btnReport{
+    position:fixed;right:14px;bottom:88px;z-index:999;
+    background:var(--danger);color:#fff;
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:62px;height:62px;
+    font-size:26px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.25);
+    cursor:pointer;
+  }
+  #btnReport:active{transform:translateY(1px);}
+
+  /* ---- report modal ---- */
+  #reportModal, #listModal{
+    position:fixed;inset:0;z-index:2500;
+    background:rgba(20,25,20,.55);
+    display:flex;align-items:flex-end;justify-content:center;
+  }
+  #reportModal.hidden, #listModal.hidden{display:none;}
+  .sheet{
+    width:100%;max-width:480px;
+    background:var(--panel);
+    border-radius:16px 16px 0 0;
+    border:3px solid var(--ink);border-bottom:none;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    max-height:85vh;overflow-y:auto;
+  }
+  .sheet h3{margin:0 0 12px;font-size:16px;color:var(--ink);}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px;}
+  .field input[type=text], .field textarea{
+    width:100%;font-size:15px;padding:10px 12px;
+    border:2px solid #ccc;border-radius:8px;
+    font-family:inherit;
+  }
+  .field textarea{min-height:70px;resize:vertical;}
+  .sheet-actions{display:flex;gap:10px;margin-top:6px;}
+  .sheet-actions button{flex:1;}
+  #photoPreview{margin-top:8px;max-width:100%;border-radius:8px;display:none;}
+
+  /* ---- signal markers ---- */
+  .signal-icon{
+    width:26px;height:26px;border-radius:50% 50% 50% 0;
+    background:var(--danger);border:2px solid #fff;
+    transform:rotate(-45deg);
+    box-shadow:1px 2px 3px rgba(0,0,0,.4);
+  }
+  .signal-icon.done{background:#5c8a5c;}
+
+  /* ---- list ---- */
+  .signal-row{
+    border:2px solid var(--ink);border-radius:10px;
+    padding:10px 12px;margin-bottom:10px;
+    font-size:13px;color:var(--ink);
+  }
+  .signal-row .meta{color:var(--muted);font-size:11px;margin-bottom:4px;}
+  .signal-row .note{margin:6px 0;}
+  .signal-row img{max-width:100%;border-radius:6px;margin:6px 0;}
+  .signal-row .row-actions{display:flex;gap:8px;margin-top:8px;}
+  .status-pill{
+    display:inline-block;font-size:10px;font-weight:800;
+    padding:2px 8px;border-radius:20px;
+    background:#f6dedb;color:var(--danger);
+    text-transform:uppercase;letter-spacing:.03em;
+  }
+  .status-pill.done{background:#e4f0e2;color:var(--line);}
+  #btnListToggle{
+    position:fixed;left:14px;bottom:88px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:52px;height:52px;
+    font-size:20px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #syncBadge{
+    position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:1500;
+    background:var(--ink);color:var(--paper);
+    font-size:11px;font-weight:700;
+    padding:5px 12px;border-radius:20px;
+    display:none;
+  }
+  #syncBadge.show{display:block;}
 </style>
 </head>
 <body>
+
+<div id="loginScreen">
+  <h1>🌿 Inspection Ambroisie</h1>
+  <p>Belsentes (07165) — accès réservé aux conseillers</p>
+  <input type="text" id="loginName" placeholder="Votre nom" autocomplete="off">
+  <input type="password" id="loginPass" placeholder="Mot de passe" autocomplete="off" class="nameField">
+  <button id="btnLogin">Entrer</button>
+  <div class="loginErr" id="loginErr"></div>
+</div>
+
+<div id="syncBadge">Synchronisation…</div>
 
 <div id="map"></div>
 
@@ -144,6 +271,46 @@
 <div id="legend">
   <div><span class="sw" style="background:var(--line)"></span> Routes communales</div>
   <div><span class="sw" style="background:var(--line-done)"></span> Trajet parcouru</div>
+</div>
+
+<button id="btnListToggle" title="Liste des signalements">☰</button>
+<button id="btnReport" title="Signaler ambroisie">🌿</button>
+
+<div id="reportModal" class="hidden">
+  <div class="sheet">
+    <h3>Signaler de l'ambroisie</h3>
+    <div class="field">
+      <label>Position</label>
+      <div id="reportCoords" style="font-size:13px;color:var(--muted)">—</div>
+    </div>
+    <div class="field">
+      <label>Conseiller</label>
+      <input type="text" id="reportName" placeholder="Nom">
+    </div>
+    <div class="field">
+      <label>Note</label>
+      <textarea id="reportNote" placeholder="Emplacement, quantité, accès..."></textarea>
+    </div>
+    <div class="field">
+      <label>Photo (optionnelle)</label>
+      <input type="file" id="reportPhoto" accept="image/*" capture="environment">
+      <img id="photoPreview">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCancelReport">Annuler</button>
+      <button class="btn primary" id="btnSaveReport">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="listModal" class="hidden">
+  <div class="sheet">
+    <h3>Signalements (<span id="listCount">0</span>)</h3>
+    <div id="listContent"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseList">Fermer</button>
+    </div>
+  </div>
 </div>
 
 <div id="controls">
@@ -163,6 +330,18 @@
 <script>
 (function(){
   "use strict";
+
+  // ================= CONFIGURATION À REMPLIR =================
+  // Voir les instructions fournies pour créer le token et le dépôt.
+  var CONFIG = {
+    GITHUB_OWNER: "VOTRE-PSEUDO-GITHUB",      // ex: "jdupont-mairie"
+    GITHUB_REPO: "ambroisie-belsentes-data",  // dépôt PRIVÉ dédié aux données
+    GITHUB_TOKEN: "COLLEZ_VOTRE_TOKEN_ICI",   // token à droits limités (voir instructions)
+    GITHUB_BRANCH: "main",
+    DATA_FILE: "signalements.json",
+    APP_PASSWORD: "ambroisie07"               // mot de passe partagé, à changer
+  };
+  // ==============================================================
 
   // Centre approximatif de Belsentes (07165), Ardèche
   var COMMUNE_CENTER = [44.9341, 4.4877];
@@ -443,9 +622,284 @@
     }
   });
 
+  // ================= AUTHENTIFICATION =================
+  var currentUser = null;
+
+  function initAuth(){
+    var savedUser = sessionStorage.getItem('ambroisie_user');
+    if(savedUser){
+      currentUser = savedUser;
+      document.getElementById('loginScreen').classList.add('hidden');
+      return;
+    }
+    document.getElementById('btnLogin').addEventListener('click', tryLogin);
+    document.getElementById('loginPass').addEventListener('keydown', function(e){
+      if(e.key === 'Enter') tryLogin();
+    });
+  }
+
+  function tryLogin(){
+    var name = document.getElementById('loginName').value.trim();
+    var pass = document.getElementById('loginPass').value;
+    var err = document.getElementById('loginErr');
+    if(!name){ err.textContent = 'Merci d\'indiquer votre nom.'; return; }
+    if(pass !== CONFIG.APP_PASSWORD){ err.textContent = 'Mot de passe incorrect.'; return; }
+    currentUser = name;
+    sessionStorage.setItem('ambroisie_user', name);
+    document.getElementById('loginScreen').classList.add('hidden');
+  }
+
+  // ================= STOCKAGE PARTAGÉ (GitHub) =================
+  var signalements = [];
+  var ghFileSha = null; // nécessaire pour mettre à jour le fichier sans écraser en conflit
+
+  function ghApiUrl(){
+    return 'https://api.github.com/repos/' + CONFIG.GITHUB_OWNER + '/' + CONFIG.GITHUB_REPO +
+           '/contents/' + CONFIG.DATA_FILE;
+  }
+
+  function showSync(msg){
+    var b = document.getElementById('syncBadge');
+    b.textContent = msg;
+    b.classList.add('show');
+  }
+  function hideSync(){
+    document.getElementById('syncBadge').classList.remove('show');
+  }
+
+  function loadSignalements(){
+    showSync('Synchronisation…');
+    fetch(ghApiUrl() + '?ref=' + CONFIG.GITHUB_BRANCH, {
+      headers: {
+        'Authorization': 'Bearer ' + CONFIG.GITHUB_TOKEN,
+        'Accept': 'application/vnd.github+json'
+      }
+    })
+    .then(function(r){
+      if(r.status === 404){
+        // fichier pas encore créé : première utilisation
+        ghFileSha = null;
+        return { content: null };
+      }
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data.content){
+        ghFileSha = data.sha;
+        var jsonStr = decodeURIComponent(escape(atob(data.content)));
+        signalements = JSON.parse(jsonStr);
+      } else {
+        signalements = [];
+      }
+      renderSignalMarkers();
+      renderList();
+      hideSync();
+    })
+    .catch(function(e){
+      console.error('Erreur chargement signalements', e);
+      hideSync();
+      showSync('Hors ligne — données locales uniquement');
+      setTimeout(hideSync, 3000);
+    });
+  }
+
+  function saveSignalements(){
+    showSync('Enregistrement…');
+    var jsonStr = JSON.stringify(signalements, null, 2);
+    var b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+    var body = {
+      message: 'Mise à jour signalements (' + new Date().toISOString() + ')',
+      content: b64,
+      branch: CONFIG.GITHUB_BRANCH
+    };
+    if(ghFileSha) body.sha = ghFileSha;
+
+    return fetch(ghApiUrl(), {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'Bearer ' + CONFIG.GITHUB_TOKEN,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      ghFileSha = data.content.sha;
+      hideSync();
+    })
+    .catch(function(e){
+      console.error('Erreur sauvegarde', e);
+      hideSync();
+      alert('Impossible d\'enregistrer sur GitHub. Vérifiez votre connexion et le token configuré. Le signalement reste visible localement pour l\'instant.');
+    });
+  }
+
+  // ================= MARQUEURS DE SIGNALEMENT =================
+  var signalMarkersLayer = L.layerGroup();
+  var pendingReportCoords = null;
+
+  function signalIcon(done){
+    return L.divIcon({
+      className: '',
+      html: '<div class="signal-icon' + (done ? ' done' : '') + '"></div>',
+      iconSize: [26,26],
+      iconAnchor: [13,26]
+    });
+  }
+
+  function renderSignalMarkers(){
+    signalMarkersLayer.clearLayers();
+    signalements.forEach(function(s){
+      var m = L.marker([s.lat, s.lon], { icon: signalIcon(s.status === 'traite') });
+      var popupHtml = '<b>' + escapeHtml(s.name || 'Conseiller') + '</b><br>' +
+        new Date(s.date).toLocaleString('fr-FR') +
+        (s.note ? '<br>' + escapeHtml(s.note) : '') +
+        (s.status === 'traite' ? '<br><i>Traité</i>' : '');
+      m.bindPopup(popupHtml);
+      m.addTo(signalMarkersLayer);
+    });
+  }
+  signalMarkersLayer.addTo(map);
+
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ---- Ouverture du formulaire de signalement ----
+  document.getElementById('btnReport').addEventListener('click', function(){
+    if(!lastFix){
+      alert('Position GPS pas encore disponible, patientez quelques secondes.');
+      return;
+    }
+    pendingReportCoords = { lat: lastFix[0], lon: lastFix[1] };
+    document.getElementById('reportCoords').textContent =
+      lastFix[0].toFixed(5) + ', ' + lastFix[1].toFixed(5);
+    document.getElementById('reportName').value = currentUser || '';
+    document.getElementById('reportNote').value = '';
+    document.getElementById('reportPhoto').value = '';
+    document.getElementById('photoPreview').style.display = 'none';
+    document.getElementById('reportModal').classList.remove('hidden');
+  });
+
+  document.getElementById('btnCancelReport').addEventListener('click', function(){
+    document.getElementById('reportModal').classList.add('hidden');
+  });
+
+  // ---- Compression de la photo côté navigateur avant sauvegarde ----
+  var photoDataUrl = null;
+  document.getElementById('reportPhoto').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(evt){
+      var img = new Image();
+      img.onload = function(){
+        var maxDim = 900;
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        photoDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        var prev = document.getElementById('photoPreview');
+        prev.src = photoDataUrl;
+        prev.style.display = 'block';
+      };
+      img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('btnSaveReport').addEventListener('click', function(){
+    if(!pendingReportCoords) return;
+    var entry = {
+      id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      lat: pendingReportCoords.lat,
+      lon: pendingReportCoords.lon,
+      name: document.getElementById('reportName').value.trim() || currentUser,
+      note: document.getElementById('reportNote').value.trim(),
+      photo: photoDataUrl || null,
+      date: new Date().toISOString(),
+      status: 'a_traiter'
+    };
+    signalements.push(entry);
+    renderSignalMarkers();
+    renderList();
+    document.getElementById('reportModal').classList.add('hidden');
+    photoDataUrl = null;
+    saveSignalements();
+  });
+
+  // ================= LISTE DES SIGNALEMENTS =================
+  function renderList(){
+    var content = document.getElementById('listContent');
+    document.getElementById('listCount').textContent = signalements.length;
+    if(signalements.length === 0){
+      content.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>';
+      return;
+    }
+    var sorted = signalements.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    content.innerHTML = sorted.map(function(s){
+      var isDone = s.status === 'traite';
+      return '<div class="signal-row">' +
+        '<span class="status-pill' + (isDone ? ' done' : '') + '">' + (isDone ? 'Traité' : 'À traiter') + '</span>' +
+        '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
+        '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
+        (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
+        (s.photo ? '<img src="' + s.photo + '">' : '') +
+        '<div class="row-actions">' +
+          '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:12px;">Voir sur la carte</button>' +
+          '<button class="btn" data-toggle="' + s.id + '" style="flex:1;padding:8px;font-size:12px;">' + (isDone ? 'Marquer à traiter' : 'Marquer traité') + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    content.querySelectorAll('[data-goto]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-goto');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          document.getElementById('listModal').classList.add('hidden');
+          following = false; updateFollowBtn();
+          map.setView([s.lat, s.lon], 17, { animate:true });
+        }
+      });
+    });
+    content.querySelectorAll('[data-toggle]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-toggle');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.status = s.status === 'traite' ? 'a_traiter' : 'traite';
+          renderSignalMarkers();
+          renderList();
+          saveSignalements();
+        }
+      });
+    });
+  }
+
+  document.getElementById('btnListToggle').addEventListener('click', function(){
+    renderList();
+    document.getElementById('listModal').classList.remove('hidden');
+  });
+  document.getElementById('btnCloseList').addEventListener('click', function(){
+    document.getElementById('listModal').classList.add('hidden');
+  });
+
   // ---- Boot ----
+  initAuth();
   loadCommuneRoads();
   startGps();
+  loadSignalements();
 
 })();
 </script>
