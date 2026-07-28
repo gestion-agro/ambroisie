@@ -256,6 +256,17 @@
   }
   .user-row .role-tag{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;}
   .user-row button{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--danger);color:var(--danger);background:#fff;}
+  #gpsWarning{
+    position:fixed;left:10px;right:10px;top:56px;z-index:1400;
+    background:#fbeecd;border:2px solid var(--amber);color:#5c4413;
+    border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.4;
+    display:none;
+  }
+  #gpsWarning.show{display:flex;align-items:flex-start;gap:8px;}
+  #gpsWarning button{
+    background:none;border:none;font-size:16px;color:#5c4413;cursor:pointer;
+    line-height:1;padding:0 2px;flex:none;
+  }
   #syncBadge{
     position:fixed;left:50%;transform:translateX(-50%);top:64px;z-index:1500;
     background:var(--ink);color:var(--paper);
@@ -278,6 +289,11 @@
 </div>
 
 <div id="syncBadge">Synchronisation…</div>
+
+<div id="gpsWarning">
+  <span>📶 Position peu précise détectée (probablement pas de puce GPS sur cet appareil). Pour un suivi terrain fiable, utilisez plutôt un smartphone — sauf si cet ordinateur dispose d'un GPS ou d'une carte SIM intégrés.</span>
+  <button id="btnCloseGpsWarning" title="Fermer">✕</button>
+</div>
 
 <div id="map"></div>
 
@@ -507,7 +523,8 @@
 
     var endpoints = [
       'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter'
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.openstreetmap.ru/api/interpreter'
     ];
 
     function tryEndpoint(i){
@@ -588,6 +605,7 @@
     lastFix = [lat, lon];
 
     setStatus('ok', 'GPS actif · précision ' + Math.round(acc) + ' m');
+    checkGpsAccuracyWarning(acc);
 
     if(!userMarker){
       userMarker = L.marker([lat, lon], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
@@ -614,6 +632,24 @@
       map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate:true });
     }
   }
+
+  var ACCURACY_WARNING_THRESHOLD = 300; // mètres
+  var gpsWarningDismissed = false;
+
+  function checkGpsAccuracyWarning(acc){
+    var box = document.getElementById('gpsWarning');
+    if(gpsWarningDismissed) return;
+    if(acc > ACCURACY_WARNING_THRESHOLD){
+      box.classList.add('show');
+    } else {
+      box.classList.remove('show');
+    }
+  }
+
+  document.getElementById('btnCloseGpsWarning').addEventListener('click', function(){
+    gpsWarningDismissed = true;
+    document.getElementById('gpsWarning').classList.remove('show');
+  });
 
   function onGpsError(err){
     var msg = 'GPS indisponible';
