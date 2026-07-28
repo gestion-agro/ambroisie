@@ -352,7 +352,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-g</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -363,6 +363,7 @@
   <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
   <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
   <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
+  <div><span class="sw" style="background:#c9268a"></span> Citoyen (en attente)</div>
   <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
 </div>
 
@@ -1136,6 +1137,7 @@
       citizenSha = data.sha || null;
       updateCitizenBadge();
       renderList();
+      renderCitizenMarkers();
     })
     .catch(function(e){ console.warn('Erreur chargement signalements citoyens', e); });
   }
@@ -1227,6 +1229,7 @@
         renderSignalMarkers();
         renderList();
         updateCitizenBadge();
+        renderCitizenMarkers();
         saveSignalements();
         saveCitizenReports();
       });
@@ -1240,6 +1243,7 @@
         r.status = 'rejete';
         renderList();
         updateCitizenBadge();
+        renderCitizenMarkers();
         saveCitizenReports();
       });
     });
@@ -1525,6 +1529,35 @@
     });
   }
   signalMarkersLayer.addTo(map);
+
+  // ---- Marqueurs des signalements citoyens en attente (couleur distincte) ----
+  var citizenMarkersLayer = L.layerGroup().addTo(map);
+  var CITIZEN_PENDING_COLOR = '#c9268a';
+
+  function citizenIcon(){
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;background:' + CITIZEN_PENDING_COLOR + ';border:2px solid #fff;transform:rotate(-45deg);box-shadow:1px 2px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);font-size:11px;">🧑</span></div>',
+      iconSize: [24,24],
+      iconAnchor: [12,24]
+    });
+  }
+
+  function renderCitizenMarkers(){
+    citizenMarkersLayer.clearLayers();
+    citizenReports.forEach(function(r){
+      if(r.status !== 'nouveau') return; // déjà validé ou rejeté : plus besoin de le montrer
+      var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+      var m = L.marker([r.lat, r.lon], { icon: citizenIcon() });
+      var popupHtml = '<b>🧑 ' + escapeHtml(r.refNumber || '') + '</b><br>' +
+        escapeHtml(fullName) + '<br>' +
+        'Quantité : ' + escapeHtml(r.quantity || '—') + '<br>' +
+        new Date(r.date).toLocaleString('fr-FR') + '<br>' +
+        '<i>En attente de validation</i>';
+      m.bindPopup(popupHtml);
+      m.addTo(citizenMarkersLayer);
+    });
+  }
 
   function escapeHtml(str){
     var div = document.createElement('div');
