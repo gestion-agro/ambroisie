@@ -174,6 +174,35 @@
   }
   #btnReport:active{transform:translateY(1px);}
 
+  #btnPlacePin{
+    position:fixed;right:84px;bottom:98px;z-index:999;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:46px;height:46px;
+    font-size:19px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #btnPlacePin.active{
+    background:var(--danger);color:#fff;
+    animation:pinPulse 1s infinite;
+  }
+  @keyframes pinPulse{0%,100%{box-shadow:2px 3px 0 rgba(0,0,0,.2);}50%{box-shadow:0 0 0 6px rgba(178,58,46,.25);}}
+
+  #placeBanner{
+    position:fixed;left:10px;right:10px;top:56px;z-index:1450;
+    background:var(--ink);color:var(--paper);
+    border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.4;
+    display:none;align-items:center;gap:8px;
+  }
+  #placeBanner.show{display:flex;}
+  #placeBanner button{
+    background:var(--paper);color:var(--ink);border:none;border-radius:8px;
+    padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;flex:none;
+  }
+
   /* ---- report modal ---- */
   #reportModal, #listModal, #accountModal{
     position:fixed;inset:0;z-index:2500;
@@ -315,6 +344,12 @@
 
 <button id="btnListToggle" title="Liste des signalements">☰</button>
 <button id="btnReport" title="Signaler ambroisie">🌿</button>
+<button id="btnPlacePin" title="Signaler à un endroit précis sur la carte">📍</button>
+
+<div id="placeBanner">
+  <span>👉 Touchez la carte à l'endroit exact du signalement.</span>
+  <button id="btnCancelPlace">Annuler</button>
+</div>
 
 <div id="reportModal" class="hidden">
   <div class="sheet">
@@ -1167,23 +1202,58 @@
   }
 
   // ---- Ouverture du formulaire de signalement ----
-  document.getElementById('btnReport').addEventListener('click', function(){
-    if(!lastFix){
-      alert('Position GPS pas encore disponible, patientez quelques secondes.');
-      return;
-    }
-    pendingReportCoords = { lat: lastFix[0], lon: lastFix[1] };
-    document.getElementById('reportCoords').textContent =
-      lastFix[0].toFixed(5) + ', ' + lastFix[1].toFixed(5);
+  function openReportForm(lat, lon){
+    pendingReportCoords = { lat: lat, lon: lon };
+    document.getElementById('reportCoords').textContent = lat.toFixed(5) + ', ' + lon.toFixed(5);
     document.getElementById('reportName').value = currentUser || '';
     document.getElementById('reportNote').value = '';
     document.getElementById('reportPhoto').value = '';
     document.getElementById('photoPreview').style.display = 'none';
     document.getElementById('reportModal').classList.remove('hidden');
+  }
+
+  document.getElementById('btnReport').addEventListener('click', function(){
+    if(!lastFix){
+      alert('Position GPS pas encore disponible, patientez quelques secondes.');
+      return;
+    }
+    openReportForm(lastFix[0], lastFix[1]);
   });
 
   document.getElementById('btnCancelReport').addEventListener('click', function(){
     document.getElementById('reportModal').classList.add('hidden');
+  });
+
+  // ---- Placement manuel sur la carte (pour signaler un endroit sans y être) ----
+  var placingReport = false;
+
+  function enterPlacingMode(){
+    placingReport = true;
+    following = false;
+    updateFollowBtn();
+    document.getElementById('btnPlacePin').classList.add('active');
+    document.getElementById('placeBanner').classList.add('show');
+    map.getContainer().style.cursor = 'crosshair';
+  }
+  function exitPlacingMode(){
+    placingReport = false;
+    document.getElementById('btnPlacePin').classList.remove('active');
+    document.getElementById('placeBanner').classList.remove('show');
+    map.getContainer().style.cursor = '';
+  }
+
+  document.getElementById('btnPlacePin').addEventListener('click', function(){
+    if(placingReport){ exitPlacingMode(); return; }
+    enterPlacingMode();
+  });
+  document.getElementById('btnCancelPlace').addEventListener('click', function(){
+    exitPlacingMode();
+  });
+
+  map.on('click', function(e){
+    if(!placingReport) return;
+    exitPlacingMode();
+    openReportForm(e.latlng.lat, e.latlng.lng);
   });
 
   // ---- Compression de la photo côté navigateur avant sauvegarde ----
