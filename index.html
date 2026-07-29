@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-i</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-j</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1303,7 +1303,7 @@
           '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
           '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
           (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
-          (r.photo ? '<img src="' + r.photo + '">' : '') +
+          (r.photo ? '<a href="' + r.photo + '" target="_blank" rel="noopener" class="btn" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;text-decoration:none;">📷 Voir la photo</a><br>' : '') +
           '<div class="row-actions">' +
             '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
             '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
@@ -1445,6 +1445,12 @@
         }
 
         offerEmailNotification(r);
+
+        // Ouvre directement la fiche du nouveau signalement officiel créé,
+        // pour permettre au conseiller de compléter/vérifier tout de suite.
+        following = false; updateFollowBtn();
+        map.setView([entry.lat, entry.lon], 17, { animate:true });
+        openSignalQuickEdit(entry.id);
       });
     });
     content.querySelectorAll('[data-creject]').forEach(function(btn){
@@ -1847,7 +1853,7 @@
       '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
       '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
       (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
-      (r.photo ? '<img src="' + r.photo + '">' : '') +
+      (r.photo ? '<a href="' + r.photo + '" target="_blank" rel="noopener" class="btn" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;text-decoration:none;">📷 Voir la photo</a><br>' : '') +
       '<div class="row-actions">' +
         '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
         '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
@@ -2125,7 +2131,7 @@
       originLine +
       createdLine +
       lastModLine +
-      (s.photo ? '<img src="' + s.photo + '">' : '') +
+      (s.photo ? '<a href="' + s.photo + '" target="_blank" rel="noopener" class="btn" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;text-decoration:none;">📷 Voir la photo</a><br>' : '') +
       '<div class="field" style="margin-top:10px;">' +
         '<label>Quantité</label>' +
         '<select data-quantity="' + s.id + '" style="width:100%;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;">' + qtyOptions + '</select>' +
