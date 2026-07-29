@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-m</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-n</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1296,16 +1296,16 @@
     var processed = citizenReports.filter(function(r){ return r.status === 'valide' || r.status === 'rejete'; })
       .sort(function(a,b){ return new Date(b.processedAt || b.date) - new Date(a.processedAt || a.date); });
 
-    if(pending.length === 0 && processed.length === 0) return '';
-
     var html = '';
 
-    if(pending.length > 0){
-      html += '<div id="btnToggleSCList" style="margin:18px 0 10px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);cursor:pointer;">' +
-        '<b style="font-size:14px;">' + (showSCPendingList ? '▾' : '▸') + ' 🧑 Signalements citoyens à valider (' + pending.length + ')</b>' +
-        '</div>';
+    html += '<div id="btnToggleSCList" style="margin:18px 0 10px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);cursor:pointer;">' +
+      '<b style="font-size:14px;">' + (showSCPendingList ? '▾' : '▸') + ' 🧑 Signalements citoyens à valider (' + pending.length + ')</b>' +
+      '</div>';
 
-      if(showSCPendingList){
+    if(showSCPendingList){
+      if(pending.length === 0){
+        html += '<p style="color:var(--muted);font-size:13px;margin:0 0 10px;">Aucun signalement citoyen en attente pour l\'instant.</p>';
+      } else {
         html += pending.map(function(r){
           var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
           return '<div class="citizen-row">' +
@@ -2439,19 +2439,21 @@
     var errorCount = signalements.length - activeCount;
     document.getElementById('listCount').textContent = activeCount;
 
-    var toggleBar = '<div id="btnToggleSMList" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);">' +
+    var smHeader = '<div id="btnToggleSMList" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);">' +
       '<b style="font-size:14px;">' + (showSMList ? '▾' : '▸') + ' 📋 Signalements officiels (' + activeCount + ')</b>' +
-      '</div>' +
-      '<div style="margin-bottom:10px;">' +
+      '</div>';
+
+    var errorsToggle = showSMList ? '<div style="margin-bottom:10px;">' +
       '<button class="btn" id="btnToggleErrors" style="font-size:12px;padding:7px 10px;">' +
         (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
-      '</button></div>';
+      '</button></div>' : '';
+
+    var toggleBar = smHeader + errorsToggle;
 
     var visible = signalements.filter(function(s){ return listShowErrors || !getErreur(s); });
 
     if(!showSMList){
       content.innerHTML = toggleBar + renderCitizenSection();
-      wireToggleErrorsButton();
       wireToggleSMButton();
       wireCitizenSectionButtons(content);
       updateCitizenBadge();
