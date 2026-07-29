@@ -104,7 +104,8 @@
   }
   #legend div{display:flex;align-items:center;gap:6px;}
   #legend .sw{width:16px;height:3px;border-radius:2px;flex:none;}
-  #legendHeader, #legendBody{display:block;}
+  #legendBody{display:block !important;}
+  #legendBody > div{display:flex;align-items:center;gap:6px;}
   #legendBody.collapsed{display:none;}
 
   /* ---- loading overlay ---- */
@@ -365,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-l</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-m</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
