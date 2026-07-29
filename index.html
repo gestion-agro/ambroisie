@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-l</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-m</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1301,9 +1301,8 @@
     var html = '';
 
     if(pending.length > 0){
-      html += '<div style="margin:18px 0 10px;padding-top:14px;border-top:2px solid #ddd;display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
-        '<h3 style="margin:0;font-size:15px;color:var(--ink);">🧑 Signalements citoyens à valider (' + pending.length + ')</h3>' +
-        '<button class="btn" id="btnToggleSCList" style="font-size:11px;padding:6px 9px;flex:none;">' + (showSCPendingList ? '▾ Masquer' : '▸ Afficher') + '</button>' +
+      html += '<div id="btnToggleSCList" style="margin:18px 0 10px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);cursor:pointer;">' +
+        '<b style="font-size:14px;">' + (showSCPendingList ? '▾' : '▸') + ' 🧑 Signalements citoyens à valider (' + pending.length + ')</b>' +
         '</div>';
 
       if(showSCPendingList){
@@ -1326,10 +1325,9 @@
     }
 
     if(processed.length > 0){
-      html += '<div style="margin:14px 0 10px;">' +
-        '<button class="btn" id="btnToggleCitizenHistory" style="font-size:12px;padding:7px 10px;">' +
-          (showCitizenHistory ? 'Masquer l\'historique citoyens' : 'Voir l\'historique citoyens traités (' + processed.length + ')') +
-        '</button></div>';
+      html += '<div id="btnToggleCitizenHistory" style="margin:14px 0 10px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);cursor:pointer;">' +
+        '<b style="font-size:14px;">' + (showCitizenHistory ? '▾' : '▸') + ' 🕓 Historique citoyens traités (' + processed.length + ')</b>' +
+      '</div>';
 
       if(showCitizenHistory){
         html += processed.map(function(r){
@@ -1646,7 +1644,11 @@
 
     validated.forEach(function(r){
       if(r.transferredToId){
-        // Déjà correctement lié, rien à faire.
+        // Vérifie que le signalement officiel référencé existe TOUJOURS
+        // (il a pu être supprimé depuis, avant l'ajout du nettoyage automatique).
+        var stillExists = signalements.some(function(s){ return s.id === r.transferredToId; });
+        if(stillExists) return; // correctement lié, rien à faire
+        broken.push(r);
         return;
       }
       // Cherche un signalement officiel qui référence bien ce citoyen
@@ -1668,7 +1670,7 @@
     var msg = '';
     if(repaired.length > 0) msg += repaired.length + ' lien(s) réparé(s) automatiquement (le signalement officiel existait bien).\n';
     if(broken.length > 0){
-      msg += broken.length + ' signalement(s) citoyen(s) marqué(s) "validé" SANS signalement officiel correspondant :\n' +
+      msg += broken.length + ' signalement(s) citoyen(s) marqué(s) "validé" SANS signalement officiel existant (supprimé ou jamais créé) :\n' +
         broken.map(function(r){ return '- ' + (r.refNumber || r.id); }).join('\n') +
         '\n\nLes remettre "en attente" pour permettre un nouveau transfert ?';
     }
@@ -1679,6 +1681,7 @@
 
     broken.forEach(function(r){
       r.status = 'nouveau';
+      delete r.transferredToId;
       delete r.processedBy;
       delete r.processedAt;
     });
@@ -2387,14 +2390,33 @@
       });
     });
     content.querySelectorAll('[data-delete]').forEach(function(btn){
-      btn.addEventListener('click', function(){
+      btn.addEventListener('click', async function(){
         var id = btn.getAttribute('data-delete');
+        var s = signalements.find(function(x){ return x.id === id; });
         if(!confirm('Supprimer définitivement ce signalement ? Cette action est irréversible.')) return;
         signalements = signalements.filter(function(x){ return x.id !== id; });
         renderSignalMarkers();
         renderList();
         if(closeModalId) document.getElementById(closeModalId).classList.add('hidden');
-        saveSignalements();
+        await saveSignalements();
+
+        // Si ce signalement provenait d'un citoyen, on remet son signalement
+        // d'origine "en attente" plutôt que de le laisser marqué "validé" en
+        // pointant vers un SM qui n'existe plus (c'est ce qui provoquait le
+        // faux "confirmé" persistant côté public).
+        if(s && s.fromCitizenId){
+          var r = citizenReports.find(function(x){ return x.id === s.fromCitizenId; });
+          if(r){
+            r.status = 'nouveau';
+            delete r.transferredToId;
+            delete r.processedBy;
+            delete r.processedAt;
+            renderList();
+            updateCitizenBadge();
+            renderCitizenMarkers();
+            saveCitizenReports();
+          }
+        }
       });
     });
   }
@@ -2417,10 +2439,10 @@
     var errorCount = signalements.length - activeCount;
     document.getElementById('listCount').textContent = activeCount;
 
-    var toggleBar = '<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
-      '<button class="btn" id="btnToggleSMList" style="font-size:12px;padding:7px 10px;">' +
-        (showSMList ? '▾ Masquer les signalements (SM)' : '▸ Afficher les signalements (SM) (' + activeCount + ')') +
-      '</button>' +
+    var toggleBar = '<div id="btnToggleSMList" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);">' +
+      '<b style="font-size:14px;">' + (showSMList ? '▾' : '▸') + ' 📋 Signalements officiels (' + activeCount + ')</b>' +
+      '</div>' +
+      '<div style="margin-bottom:10px;">' +
       '<button class="btn" id="btnToggleErrors" style="font-size:12px;padding:7px 10px;">' +
         (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
       '</button></div>';
