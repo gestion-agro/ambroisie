@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-a</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-b</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1287,7 +1287,7 @@
     var mailtoUrl = 'mailto:' + encodeURIComponent(r.email) +
       '?subject=' + encodeURIComponent(subject) +
       '&body=' + encodeURIComponent(body);
-    window.location.href = mailtoUrl;
+    window.open(mailtoUrl, '_blank');
   }
 
   function wireCitizenSectionButtons(content){
