@@ -104,6 +104,8 @@
   }
   #legend div{display:flex;align-items:center;gap:6px;}
   #legend .sw{width:16px;height:3px;border-radius:2px;flex:none;}
+  #legendHeader, #legendBody{display:block;}
+  #legendBody.collapsed{display:none;}
 
   /* ---- loading overlay ---- */
   #loading{
@@ -363,19 +365,25 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-k</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-l</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
 <div id="legend">
-  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
-  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" checked style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
-  <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" checked style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
-  <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
-  <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
-  <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
-  <div><span class="sw" style="background:#c9268a"></span> Citoyen (en attente)</div>
-  <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
+  <div id="legendHeader" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+    <b style="font-size:12px;">Légende</b>
+    <span id="legendToggleIcon" style="font-size:12px;">▾</span>
+  </div>
+  <div id="legendBody">
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" checked style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" checked style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
+    <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
+    <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
+    <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
+    <div><span class="sw" style="background:#c9268a"></span> Citoyen (en attente)</div>
+    <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
+  </div>
 </div>
 
 <button id="btnListToggle" title="Liste des signalements">☰<span id="listBadge">0</span></button>
@@ -1957,6 +1965,14 @@
   });
 
   // ---- Affichage/masquage et rechargement manuel des routes ----
+  // ---- Repli/dépli de la légende ----
+  document.getElementById('legendHeader').addEventListener('click', function(){
+    var body = document.getElementById('legendBody');
+    var icon = document.getElementById('legendToggleIcon');
+    var collapsed = body.classList.toggle('collapsed');
+    icon.textContent = collapsed ? '▸' : '▾';
+  });
+
   document.getElementById('chkRoadsRC').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerRC); } else { map.removeLayer(roadsLayerRC); }
   });
