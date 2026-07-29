@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-p</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-a</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1264,6 +1264,32 @@
     return html;
   }
 
+  // Propose au conseiller d'envoyer un email de suivi au citoyen (si une adresse
+  // a été renseignée), en ouvrant son client mail habituel (Mail, Thunderbird,
+  // Gmail...) avec le destinataire, l'objet et le message déjà prêts.
+  function offerEmailNotification(r){
+    if(!r.email) return;
+    var confirmed = confirm(
+      'Un email est associé à ce signalement (' + r.email + ').\n\n' +
+      'Voulez-vous ouvrir votre messagerie pour envoyer un email de confirmation au citoyen ?'
+    );
+    if(!confirmed) return;
+
+    var subject = 'Suivi de votre signalement d\'ambroisie (' + (r.refNumber || '') + ')';
+    var body =
+      'Bonjour ' + (r.firstName || '') + ',\n\n' +
+      'Nous vous confirmons la bonne prise en compte de votre signalement d\'ambroisie (référence ' + (r.refNumber || '') + '), transmis le ' + new Date(r.date).toLocaleDateString('fr-FR') + '.\n\n' +
+      'Votre signalement a été validé et transmis pour traitement.\n\n' +
+      'Nous vous remercions pour votre vigilance.\n\n' +
+      'Cordialement,\n' +
+      'La mairie de Belsentes';
+
+    var mailtoUrl = 'mailto:' + encodeURIComponent(r.email) +
+      '?subject=' + encodeURIComponent(subject) +
+      '&body=' + encodeURIComponent(body);
+    window.location.href = mailtoUrl;
+  }
+
   function wireCitizenSectionButtons(content){
     content.querySelectorAll('[data-cgoto]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -1303,6 +1329,7 @@
         document.getElementById('quickEditModal').classList.add('hidden');
         saveSignalements();
         saveCitizenReports();
+        offerEmailNotification(r);
       });
     });
     content.querySelectorAll('[data-creject]').forEach(function(btn){
