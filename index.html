@@ -374,7 +374,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-r</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-s</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -390,6 +390,11 @@
     <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
     <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
     <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
+    <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><b style="font-size:11px;">Signalements :</b></div>
+    <div><span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> À traiter</div>
+    <div><span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> Traité</div>
+    <div><span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> Doublon</div>
+    <div><span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> Pas d'ambroisie</div>
     <div><span class="sw" style="background:#c9268a"></span> Citoyen (en attente)</div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
   </div>
@@ -2025,12 +2030,23 @@
   function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
   function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
 
+  // Couleur du marqueur sur la carte : logique dédiée au terrain, distincte des
+  // étiquettes de la liste. Priorité à l'info la plus utile pour un conseiller
+  // qui regarde la carte : "dois-je encore aller traiter ça ?"
+  //   - Doublon / Pas d'ambroisie : couleur administrative dédiée (bleu / gris)
+  //   - Sinon (validé ou en cours) : vert si traité, rouge si encore à traiter
+  function markerColorFor(entry){
+    var cls = getClassification(entry);
+    if(cls === 'doublon') return '#2f6bd6';
+    if(cls === 'pas_ambroisie') return '#8a8a8a';
+    return getTraite(entry) ? '#2f6b3a' : '#c0392b';
+  }
+
   function signalIcon(entry){
-    var clsInfo = CLASSIFICATIONS[getClassification(entry)] || CLASSIFICATIONS['valide'];
-    var opacity = getTraite(entry) ? 0.45 : 1;
+    var color = markerColorFor(entry);
     return L.divIcon({
       className: '',
-      html: '<div class="signal-icon" style="background:' + clsInfo.color + ';opacity:' + opacity + ';"></div>',
+      html: '<div class="signal-icon" style="background:' + color + ';"></div>',
       iconSize: [26,26],
       iconAnchor: [13,26]
     });
