@@ -219,6 +219,17 @@
     max-height:85vh;overflow-y:auto;
   }
   .sheet h3{margin:0 0 12px;font-size:16px;color:var(--ink);}
+  .sheet-header{
+    position:sticky;top:-16px;background:var(--panel);
+    display:flex;align-items:center;justify-content:space-between;
+    margin:-16px -16px 12px;padding:16px 16px 10px;
+    z-index:5;border-bottom:1px solid #eee;
+  }
+  .sheet-header h3{margin:0;}
+  .sheet-close-x{
+    background:none;border:none;font-size:26px;line-height:1;
+    color:var(--muted);cursor:pointer;padding:2px 8px;flex:none;
+  }
   .field{margin-bottom:12px;}
   .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px;}
   .field input[type=text], .field textarea{
@@ -352,7 +363,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-j</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-k</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -415,7 +426,10 @@
 
 <div id="listModal" class="hidden">
   <div class="sheet">
-    <h3>Signalements (<span id="listCount">0</span>)</h3>
+    <div class="sheet-header">
+      <h3>Signalements (<span id="listCount">0</span>)</h3>
+      <button class="sheet-close-x" id="btnCloseListX" title="Fermer">✕</button>
+    </div>
     <div id="listContent"></div>
     <div class="sheet-actions">
       <button class="btn" id="btnCloseList">Fermer</button>
@@ -425,7 +439,10 @@
 
 <div id="quickEditModal" class="hidden">
   <div class="sheet">
-    <h3>Signalement</h3>
+    <div class="sheet-header">
+      <h3>Signalement</h3>
+      <button class="sheet-close-x" id="btnCloseQuickEditX" title="Fermer">✕</button>
+    </div>
     <div id="quickEditContent"></div>
     <div class="sheet-actions">
       <button class="btn" id="btnCloseQuickEdit">Fermer</button>
@@ -1907,7 +1924,13 @@
   document.getElementById('btnCloseList').addEventListener('click', function(){
     document.getElementById('listModal').classList.add('hidden');
   });
+  document.getElementById('btnCloseListX').addEventListener('click', function(){
+    document.getElementById('listModal').classList.add('hidden');
+  });
   document.getElementById('btnCloseQuickEdit').addEventListener('click', function(){
+    document.getElementById('quickEditModal').classList.add('hidden');
+  });
+  document.getElementById('btnCloseQuickEditX').addEventListener('click', function(){
     document.getElementById('quickEditModal').classList.add('hidden');
   });
 
