@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-c</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-d</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1242,30 +1242,64 @@
   // Rend la section "signalements citoyens en attente" DANS le même conteneur
   // que la liste officielle (#listContent), pour éviter d'avoir un bouton et un
   // panneau séparés qui prêtaient à confusion.
+  var showCitizenHistory = false;
+
   function renderCitizenSection(){
     var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; })
       .sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    var processed = citizenReports.filter(function(r){ return r.status === 'valide' || r.status === 'rejete'; })
+      .sort(function(a,b){ return new Date(b.processedAt || b.date) - new Date(a.processedAt || a.date); });
 
-    if(pending.length === 0) return '';
+    if(pending.length === 0 && processed.length === 0) return '';
 
-    var html = '<div style="margin:18px 0 10px;padding-top:14px;border-top:2px solid #ddd;">' +
-      '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink);">🧑 Signalements citoyens à valider (' + pending.length + ')</h3>' +
-      '</div>';
+    var html = '';
 
-    html += pending.map(function(r){
-      var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
-      return '<div class="citizen-row">' +
-        '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
-        '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
-        '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
-        (r.photo ? '<img src="' + r.photo + '">' : '') +
-        '<div class="row-actions">' +
-          '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
-          '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
-          '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
-        '</div>' +
-      '</div>';
-    }).join('');
+    if(pending.length > 0){
+      html += '<div style="margin:18px 0 10px;padding-top:14px;border-top:2px solid #ddd;">' +
+        '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink);">🧑 Signalements citoyens à valider (' + pending.length + ')</h3>' +
+        '</div>';
+
+      html += pending.map(function(r){
+        var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+        return '<div class="citizen-row">' +
+          '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
+          '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
+          '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+          (r.photo ? '<img src="' + r.photo + '">' : '') +
+          '<div class="row-actions">' +
+            '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+            '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
+            '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    if(processed.length > 0){
+      html += '<div style="margin:14px 0 10px;">' +
+        '<button class="btn" id="btnToggleCitizenHistory" style="font-size:12px;padding:7px 10px;">' +
+          (showCitizenHistory ? 'Masquer l\'historique citoyens' : 'Voir l\'historique citoyens traités (' + processed.length + ')') +
+        '</button></div>';
+
+      if(showCitizenHistory){
+        html += processed.map(function(r){
+          var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+          var isValide = r.status === 'valide';
+          var actionLabel = isValide ? 'Validé et transféré' : 'Rejeté';
+          var byWhom = r.processedBy ? escapeHtml(r.processedBy) : 'inconnu';
+          var whenProcessed = r.processedAt ? new Date(r.processedAt).toLocaleString('fr-FR') : '—';
+          return '<div class="citizen-row" style="opacity:0.85;">' +
+            '<span class="status-pill' + (isValide ? ' done' : ' erreur') + '">' + actionLabel + '</span>' +
+            '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · signalé le ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
+            '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
+            '<div class="meta">' + actionLabel + ' par <b>' + byWhom + '</b> le ' + whenProcessed + '</div>' +
+            '<div class="row-actions">' +
+              '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+    }
 
     return html;
   }
@@ -1297,6 +1331,13 @@
   }
 
   function wireCitizenSectionButtons(content){
+    var toggleHistBtn = content.querySelector('#btnToggleCitizenHistory');
+    if(toggleHistBtn){
+      toggleHistBtn.addEventListener('click', function(){
+        showCitizenHistory = !showCitizenHistory;
+        renderList();
+      });
+    }
     content.querySelectorAll('[data-cgoto]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var r = citizenReports.find(function(x){ return x.id === btn.getAttribute('data-cgoto'); });
@@ -1326,10 +1367,16 @@
           date: r.date,
           classification: 'valide',
           traite: false,
-          isErreur: false
+          isErreur: false,
+          fromCitizenId: r.id,
+          lastModifiedBy: getUserFullName(currentUser),
+          lastModifiedAt: new Date().toISOString()
         };
         signalements.push(entry);
         r.status = 'valide';
+        r.processedBy = getUserFullName(currentUser);
+        r.processedAt = new Date().toISOString();
+        r.transferredToId = entry.id;
         renderSignalMarkers();
         renderList();
         updateCitizenBadge();
@@ -1361,6 +1408,8 @@
         if(!r) return;
         if(!confirm('Rejeter ce signalement citoyen ? Il ne sera pas transféré et disparaîtra de la carte publique.')) return;
         r.status = 'rejete';
+        r.processedBy = getUserFullName(currentUser);
+        r.processedAt = new Date().toISOString();
         renderList();
         updateCitizenBadge();
         renderCitizenMarkers();
@@ -1848,6 +1897,8 @@
     var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
       return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
     }).join('');
+    var lastModLine = s.lastModifiedBy ?
+      '<div class="meta" style="font-style:italic;">Dernière modif. par ' + escapeHtml(s.lastModifiedBy) + ' le ' + new Date(s.lastModifiedAt).toLocaleString('fr-FR') + '</div>' : '';
     return '<div class="signal-row">' +
       '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
       '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
@@ -1855,6 +1906,7 @@
       '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
       (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
+      lastModLine +
       (s.photo ? '<img src="' + s.photo + '">' : '') +
       '<div class="row-actions" style="flex-wrap:wrap;">' +
         '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
@@ -1887,6 +1939,8 @@
           s.classification = sel.value;
           s.traite = getTraite(s);
           s.isErreur = getErreur(s);
+          s.lastModifiedBy = getUserFullName(currentUser);
+          s.lastModifiedAt = new Date().toISOString();
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
@@ -1902,6 +1956,8 @@
           s.classification = getClassification(s);
           s.traite = !getTraite(s);
           s.isErreur = getErreur(s);
+          s.lastModifiedBy = getUserFullName(currentUser);
+          s.lastModifiedAt = new Date().toISOString();
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
@@ -1917,6 +1973,8 @@
           s.classification = getClassification(s);
           s.traite = getTraite(s);
           s.isErreur = !getErreur(s);
+          s.lastModifiedBy = getUserFullName(currentUser);
+          s.lastModifiedAt = new Date().toISOString();
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
