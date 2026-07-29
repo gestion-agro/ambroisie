@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-k</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-l</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1288,6 +1288,7 @@
   // que la liste officielle (#listContent), pour éviter d'avoir un bouton et un
   // panneau séparés qui prêtaient à confusion.
   var showCitizenHistory = false;
+  var showSCPendingList = true;
 
   function renderCitizenSection(){
     var pending = citizenReports.filter(function(r){ return r.status === 'nouveau'; })
@@ -1300,25 +1301,28 @@
     var html = '';
 
     if(pending.length > 0){
-      html += '<div style="margin:18px 0 10px;padding-top:14px;border-top:2px solid #ddd;">' +
-        '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink);">🧑 Signalements citoyens à valider (' + pending.length + ')</h3>' +
+      html += '<div style="margin:18px 0 10px;padding-top:14px;border-top:2px solid #ddd;display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
+        '<h3 style="margin:0;font-size:15px;color:var(--ink);">🧑 Signalements citoyens à valider (' + pending.length + ')</h3>' +
+        '<button class="btn" id="btnToggleSCList" style="font-size:11px;padding:6px 9px;flex:none;">' + (showSCPendingList ? '▾ Masquer' : '▸ Afficher') + '</button>' +
         '</div>';
 
-      html += pending.map(function(r){
-        var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
-        return '<div class="citizen-row">' +
-          '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
-          '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
-          '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
-          (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
-          (r.photo ? '<a href="' + r.photo + '" target="_blank" rel="noopener" class="btn" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;text-decoration:none;">📷 Voir la photo</a><br>' : '') +
-          '<div class="row-actions">' +
-            '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
-            '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
-            '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
-          '</div>' +
-        '</div>';
-      }).join('');
+      if(showSCPendingList){
+        html += pending.map(function(r){
+          var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+          return '<div class="citizen-row">' +
+            '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
+            '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
+            '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+            (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
+            (r.photo ? '<button type="button" class="btn" data-viewphotocit="' + r.id + '" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;">📷 Voir la photo</button><br>' : '') +
+            '<div class="row-actions">' +
+              '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+              '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
+              '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
     }
 
     if(processed.length > 0){
@@ -1384,6 +1388,19 @@
         renderList();
       });
     }
+    var toggleSCBtn = content.querySelector('#btnToggleSCList');
+    if(toggleSCBtn){
+      toggleSCBtn.addEventListener('click', function(){
+        showSCPendingList = !showSCPendingList;
+        renderList();
+      });
+    }
+    content.querySelectorAll('[data-viewphotocit]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var r = citizenReports.find(function(x){ return x.id === btn.getAttribute('data-viewphotocit'); });
+        if(r && r.photo) openPhotoInNewTab(r.photo);
+      });
+    });
     content.querySelectorAll('[data-cgoto]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var r = citizenReports.find(function(x){ return x.id === btn.getAttribute('data-cgoto'); });
@@ -1922,7 +1939,7 @@
       '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
       '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
       (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
-      (r.photo ? '<a href="' + r.photo + '" target="_blank" rel="noopener" class="btn" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;text-decoration:none;">📷 Voir la photo</a><br>' : '') +
+      (r.photo ? '<button type="button" class="btn" data-viewphotocit="' + r.id + '" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;">📷 Voir la photo</button><br>' : '') +
       '<div class="row-actions">' +
         '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
         '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
@@ -1930,6 +1947,28 @@
     '</div>';
     wireCitizenSectionButtons(box);
     document.getElementById('quickEditModal').classList.remove('hidden');
+  }
+
+  // Ouvre une photo (stockée en base64) dans un nouvel onglet de façon fiable.
+  // Chrome et d'autres navigateurs bloquent la navigation directe vers une URL
+  // "data:" dans un nouvel onglet (page blanche "Sans titre") ; on convertit
+  // donc d'abord en Blob, ce qui fonctionne correctement partout.
+  function openPhotoInNewTab(dataUrl){
+    try{
+      var parts = dataUrl.split(',');
+      var mimeMatch = parts[0].match(/data:(.*);base64/);
+      var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      var binary = atob(parts[1]);
+      var array = new Uint8Array(binary.length);
+      for(var i = 0; i < binary.length; i++){ array[i] = binary.charCodeAt(i); }
+      var blob = new Blob([array], { type: mime });
+      var url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    } catch(e){
+      console.error('Erreur ouverture photo', e);
+      alert('Impossible d\'ouvrir la photo.');
+    }
   }
 
   function escapeHtml(str){
@@ -2200,7 +2239,7 @@
       originLine +
       createdLine +
       lastModLine +
-      (s.photo ? '<a href="' + s.photo + '" target="_blank" rel="noopener" class="btn" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;text-decoration:none;">📷 Voir la photo</a><br>' : '') +
+      (s.photo ? '<button type="button" class="btn" data-viewphoto="' + s.id + '" style="display:inline-block;margin:6px 0;padding:8px 12px;font-size:12px;font-weight:700;">📷 Voir la photo</button><br>' : '') +
       '<div class="field" style="margin-top:10px;">' +
         '<label>Quantité</label>' +
         '<select data-quantity="' + s.id + '" style="width:100%;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;">' + qtyOptions + '</select>' +
@@ -2222,6 +2261,12 @@
   }
 
   function wireSignalRowButtons(content, closeModalId){
+    content.querySelectorAll('[data-viewphoto]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var s = signalements.find(function(x){ return x.id === btn.getAttribute('data-viewphoto'); });
+        if(s && s.photo) openPhotoInNewTab(s.photo);
+      });
+    });
     content.querySelectorAll('[data-modify]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var id = btn.getAttribute('data-modify');
@@ -2364,22 +2409,37 @@
     wireSignalRowButtons(box, 'quickEditModal');
   }
 
+  var showSMList = true;
+
   function renderList(){
     var content = document.getElementById('listContent');
     var activeCount = signalements.filter(function(s){ return !getErreur(s); }).length;
     var errorCount = signalements.length - activeCount;
     document.getElementById('listCount').textContent = activeCount;
 
-    var toggleBar = '<div style="margin-bottom:10px;">' +
+    var toggleBar = '<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<button class="btn" id="btnToggleSMList" style="font-size:12px;padding:7px 10px;">' +
+        (showSMList ? '▾ Masquer les signalements (SM)' : '▸ Afficher les signalements (SM) (' + activeCount + ')') +
+      '</button>' +
       '<button class="btn" id="btnToggleErrors" style="font-size:12px;padding:7px 10px;">' +
         (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
       '</button></div>';
 
     var visible = signalements.filter(function(s){ return listShowErrors || !getErreur(s); });
 
+    if(!showSMList){
+      content.innerHTML = toggleBar + renderCitizenSection();
+      wireToggleErrorsButton();
+      wireToggleSMButton();
+      wireCitizenSectionButtons(content);
+      updateCitizenBadge();
+      return;
+    }
+
     if(visible.length === 0){
       content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>' + renderCitizenSection();
       wireToggleErrorsButton();
+      wireToggleSMButton();
       wireCitizenSectionButtons(content);
       updateCitizenBadge();
       return;
@@ -2388,9 +2448,20 @@
     content.innerHTML = toggleBar + sorted.map(buildSignalRowHtml).join('') + renderCitizenSection();
 
     wireToggleErrorsButton();
+    wireToggleSMButton();
     wireCitizenSectionButtons(content);
     updateCitizenBadge();
     wireSignalRowButtons(content, null);
+  }
+
+  function wireToggleSMButton(){
+    var btn = document.getElementById('btnToggleSMList');
+    if(btn){
+      btn.addEventListener('click', function(){
+        showSMList = !showSMList;
+        renderList();
+      });
+    }
   }
 
   function wireToggleErrorsButton(){
