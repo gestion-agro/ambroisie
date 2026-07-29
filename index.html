@@ -204,12 +204,12 @@
   }
 
   /* ---- report modal ---- */
-  #reportModal, #listModal, #accountModal{
+  #reportModal, #listModal, #accountModal, #quickEditModal{
     position:fixed;inset:0;z-index:2500;
     background:rgba(20,25,20,.55);
     display:flex;align-items:flex-end;justify-content:center;
   }
-  #reportModal.hidden, #listModal.hidden, #accountModal.hidden{display:none;}
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden{display:none;}
   .sheet{
     width:100%;max-width:480px;
     background:var(--panel);
@@ -352,7 +352,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-g</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-i</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -423,6 +423,16 @@
   </div>
 </div>
 
+<div id="quickEditModal" class="hidden">
+  <div class="sheet">
+    <h3>Signalement</h3>
+    <div id="quickEditContent"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseQuickEdit">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <button id="btnAccount" title="Mon compte">👤</button>
 
 <div id="accountModal" class="hidden">
@@ -470,7 +480,7 @@
 
 <div id="controls">
   <button class="btn locate" id="btnCenter" title="Centrer sur ma position">◎</button>
-  <button class="btn primary" id="btnFollow">Suivi activé</button>
+  <button class="btn" id="btnFollow">Suivi coupé</button>
   <button class="btn" id="btnClear">Effacer trace</button>
 </div>
 
@@ -514,7 +524,7 @@
   var accuracyCircle = null;
   var trackCoords = [];
   var trackPolyline = null;
-  var following = true;
+  var following = false; // le suivi (enregistrement + centrage) doit être activé manuellement par le conseiller
   var lastFix = null;
 
   // Trace partagée : version simplifiée envoyée aux autres conseillers
@@ -674,9 +684,27 @@
   }
 
   // ================= LIMITE COMMUNALE (contour + test dedans/dehors) =================
-  var BOUNDARY_CACHE_KEY = 'ambroisie_boundary_belsentes_v2';
+  var BOUNDARY_CACHE_KEY = 'ambroisie_boundary_belsentes_v3';
   var boundaryLayer = L.layerGroup().addTo(map);
-  var communeRings = null; // null tant que non chargé (on autorise par défaut dans ce cas)
+
+  // Contour de secours intégré directement dans le code (source : IGN Admin
+  // Express / INSEE COG 2018, via france-geojson), combinant les deux anciennes
+  // communes qui forment Belsentes depuis leur fusion en 2019 (Nonières 07165 +
+  // Saint-Julien-Labrousse 07256). Affiché immédiatement, sans dépendre
+  // d'Overpass qui peut être indisponible ; remplacé par une version plus
+  // précise si Overpass répond avec succès.
+  var FALLBACK_BOUNDARY_RINGS = [[[44.88284,4.51027],[44.88577,4.51037],[44.8899,4.50819],[44.89061,4.50626],[44.88899,4.50347],[44.88811,4.50022],[44.88859,4.49661],[44.88803,4.49456],[44.89034,4.49389],[44.89245,4.49461],[44.89377,4.49383],[44.89232,4.49162],[44.89334,4.49014],[44.89513,4.49039],[44.89618,4.48999],[44.89659,4.48722],[44.8989,4.48662],[44.8997,4.48486],[44.90171,4.48499],[44.90229,4.4861],[44.90489,4.48372],[44.90833,4.48531],[44.90873,4.48836],[44.90965,4.48922],[44.91151,4.48871],[44.91438,4.49149],[44.91628,4.49613],[44.91681,4.49893],[44.91933,4.50072],[44.92217,4.50058],[44.92404,4.49983],[44.92582,4.50083],[44.92741,4.49988],[44.92845,4.50436],[44.92828,4.50878],[44.92701,4.5116],[44.92768,4.51434],[44.92763,4.51688],[44.92871,4.51958],[44.92861,4.52237],[44.92693,4.52559],[44.92845,4.53059],[44.9281,4.53272],[44.92822,4.53843],[44.92857,4.53883],[44.9281,4.54458],[44.92874,4.54662],[44.92856,4.54915],[44.92467,4.54926],[44.92334,4.54858],[44.92046,4.54892],[44.91944,4.54989],[44.91816,4.54876],[44.91519,4.54877],[44.91168,4.54675],[44.91291,4.54324],[44.91298,4.53976],[44.91032,4.5377],[44.90899,4.53435],[44.90709,4.53239],[44.90601,4.53216],[44.90392,4.52821],[44.90121,4.5245],[44.89946,4.52102],[44.89725,4.52131],[44.89538,4.52314],[44.89339,4.5232],[44.89267,4.52849],[44.8907,4.52784],[44.88821,4.52826],[44.88553,4.53259],[44.88244,4.53336],[44.88141,4.53161],[44.88311,4.52679],[44.88247,4.525],[44.88056,4.52386],[44.88272,4.51855],[44.884,4.51753],[44.88347,4.51516],[44.88229,4.51556],[44.87958,4.51394],[44.87952,4.51217],[44.88113,4.51064],[44.88284,4.51027]],[[44.93607,4.4601],[44.93932,4.46167],[44.94354,4.46012],[44.94674,4.45719],[44.94804,4.45761],[44.9503,4.45719],[44.95181,4.45578],[44.9524,4.45295],[44.95386,4.45161],[44.95694,4.4462],[44.95972,4.44396],[44.96025,4.44474],[44.95975,4.44764],[44.95695,4.45262],[44.95608,4.45664],[44.95423,4.4612],[44.95236,4.46266],[44.94921,4.46729],[44.94629,4.46966],[44.94404,4.46933],[44.94337,4.47139],[44.94175,4.47138],[44.94053,4.47433],[44.94035,4.4797],[44.93931,4.48746],[44.93744,4.48796],[44.93627,4.48601],[44.93551,4.49258],[44.93295,4.49027],[44.93164,4.49046],[44.93039,4.49207],[44.93008,4.49423],[44.92823,4.4965],[44.92741,4.49988],[44.92582,4.50083],[44.92404,4.49983],[44.92217,4.50058],[44.91933,4.50072],[44.91681,4.49893],[44.91628,4.49613],[44.91438,4.49149],[44.91151,4.48871],[44.90965,4.48922],[44.90873,4.48836],[44.90833,4.48531],[44.90489,4.48372],[44.90506,4.48171],[44.90448,4.47966],[44.90613,4.47718],[44.90783,4.47579],[44.90757,4.47233],[44.91062,4.46841],[44.9111,4.4671],[44.91066,4.46328],[44.91134,4.46122],[44.91248,4.46031],[44.91345,4.46631],[44.91561,4.46645],[44.91621,4.46805],[44.91856,4.46724],[44.92333,4.47022],[44.92489,4.46831],[44.92632,4.46867],[44.92881,4.47098],[44.9315,4.4709],[44.93296,4.47203],[44.93603,4.46973],[44.93527,4.46153],[44.93607,4.4601]]];
+
+  // On démarre avec le contour de secours, immédiatement affiché.
+  var communeRings = FALLBACK_BOUNDARY_RINGS;
+
+  function drawBoundaryRings(rings){
+    boundaryLayer.clearLayers();
+    rings.forEach(function(ring){
+      L.polygon(ring, { color:'#1a1a1a', weight:3, dashArray:'8 6', fill:false, opacity:0.8 }).addTo(boundaryLayer);
+    });
+  }
+  drawBoundaryRings(communeRings);
 
   function stitchSegments(segments){
     var segs = segments.map(function(s){ return s.slice(); });
@@ -714,7 +742,6 @@
   }
 
   function isInsideCommune(lat, lon){
-    if(!communeRings) return true; // contour pas encore chargé : on n'empêche pas le signalement
     return communeRings.some(function(ring){ return pointInRing(lat, lon, ring); });
   }
 
@@ -733,10 +760,7 @@
       .map(function(m){ return m.geometry.map(function(p){ return [p.lat, p.lon]; }); });
     if(segments.length === 0) return;
     communeRings = stitchSegments(segments);
-    boundaryLayer.clearLayers();
-    communeRings.forEach(function(ring){
-      L.polygon(ring, { color:'#1a1a1a', weight:3, dashArray:'8 6', fill:false, opacity:0.8 }).addTo(boundaryLayer);
-    });
+    drawBoundaryRings(communeRings);
   }
 
   function loadCommuneBoundary(){
@@ -897,21 +921,22 @@
       accuracyCircle.setRadius(acc);
     }
 
-    // trace parcourue (affichage local, tous les points)
-    trackCoords.push([lat, lon]);
-    if(!trackPolyline){
-      trackPolyline = L.polyline(trackCoords, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
-    } else {
-      trackPolyline.setLatLngs(trackCoords);
-    }
-
-    // trace partagée (envoyée aux autres conseillers, simplifiée par distance)
-    if(!lastSharedPoint || haversineMeters(lastSharedPoint[0], lastSharedPoint[1], lat, lon) > SHARE_MIN_DISTANCE){
-      sharedTrackPoints.push([lat, lon]);
-      lastSharedPoint = [lat, lon];
-    }
-
+    // trace parcourue (affichage local, tous les points) — uniquement si le
+    // conseiller a explicitement activé le suivi (jamais automatique à l'ouverture).
     if(following){
+      trackCoords.push([lat, lon]);
+      if(!trackPolyline){
+        trackPolyline = L.polyline(trackCoords, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
+      } else {
+        trackPolyline.setLatLngs(trackCoords);
+      }
+
+      // trace partagée (envoyée aux autres conseillers, simplifiée par distance)
+      if(!lastSharedPoint || haversineMeters(lastSharedPoint[0], lastSharedPoint[1], lat, lon) > SHARE_MIN_DISTANCE){
+        sharedTrackPoints.push([lat, lon]);
+        lastSharedPoint = [lat, lon];
+      }
+
       map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate:true });
     }
   }
@@ -967,7 +992,7 @@
 
   var btnFollow = document.getElementById('btnFollow');
   function updateFollowBtn(){
-    btnFollow.textContent = following ? 'Suivi activé' : 'Suivi coupé';
+    btnFollow.textContent = following ? '🔴 Suivi du trajet activé' : '⏸ Activer le suivi du trajet';
     btnFollow.className = following ? 'btn primary' : 'btn';
   }
   btnFollow.addEventListener('click', function(){
@@ -1071,9 +1096,23 @@
       var tracks = data.items || [];
       var sha = data.sha || null;
 
-      // Si on a de nouveaux points à partager, on met à jour notre entrée
+      var mine = tracks.find(function(t){ return t.username === currentUser; });
+
+      // Si le serveur a déjà plus de points que ce qu'on a en mémoire (nouvelle
+      // session, ou suivi déjà démarré depuis un autre appareil), on reprend
+      // cet historique comme base au lieu de repartir de zéro — c'est ce qui
+      // garantit que les trajets s'accumulent dans le temps sans jamais être
+      // écrasés par une session vide.
+      if(mine && mine.points && mine.points.length > sharedTrackPoints.length){
+        sharedTrackPoints = mine.points.slice();
+        lastSyncedPointCount = sharedTrackPoints.length;
+        if(sharedTrackPoints.length){
+          lastSharedPoint = sharedTrackPoints[sharedTrackPoints.length - 1];
+        }
+      }
+
+      // Si on a de nouveaux points à partager (au-delà de ce qui est déjà connu), on met à jour notre entrée
       if(sharedTrackPoints.length > lastSyncedPointCount){
-        var mine = tracks.find(function(t){ return t.username === currentUser; });
         if(mine){
           mine.points = sharedTrackPoints;
           mine.updatedAt = new Date().toISOString();
@@ -1230,6 +1269,7 @@
         renderList();
         updateCitizenBadge();
         renderCitizenMarkers();
+        document.getElementById('quickEditModal').classList.add('hidden');
         saveSignalements();
         saveCitizenReports();
       });
@@ -1244,6 +1284,7 @@
         renderList();
         updateCitizenBadge();
         renderCitizenMarkers();
+        document.getElementById('quickEditModal').classList.add('hidden');
         saveCitizenReports();
       });
     });
@@ -1519,16 +1560,16 @@
       // mais restent consultables dans l'onglet dédié de la liste.
       if(getErreur(s)) return;
       var m = L.marker([s.lat, s.lon], { icon: signalIcon(s) });
-      var clsInfo = CLASSIFICATIONS[getClassification(s)] || CLASSIFICATIONS['valide'];
-      var popupHtml = '<b>' + escapeHtml(s.name || 'Conseiller') + '</b><br>' +
-        new Date(s.date).toLocaleString('fr-FR') +
-        (s.note ? '<br>' + escapeHtml(s.note) : '') +
-        '<br>' + clsInfo.label + ' · ' + (getTraite(s) ? 'Traité' : 'Non traité');
-      m.bindPopup(popupHtml);
+      m.on('click', function(){ openSignalQuickEdit(s.id); });
       m.addTo(signalMarkersLayer);
     });
   }
   signalMarkersLayer.addTo(map);
+
+  function openSignalQuickEdit(id){
+    refreshQuickEdit(id);
+    document.getElementById('quickEditModal').classList.remove('hidden');
+  }
 
   // ---- Marqueurs des signalements citoyens en attente (couleur distincte) ----
   var citizenMarkersLayer = L.layerGroup().addTo(map);
@@ -1547,16 +1588,29 @@
     citizenMarkersLayer.clearLayers();
     citizenReports.forEach(function(r){
       if(r.status !== 'nouveau') return; // déjà validé ou rejeté : plus besoin de le montrer
-      var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
       var m = L.marker([r.lat, r.lon], { icon: citizenIcon() });
-      var popupHtml = '<b>🧑 ' + escapeHtml(r.refNumber || '') + '</b><br>' +
-        escapeHtml(fullName) + '<br>' +
-        'Quantité : ' + escapeHtml(r.quantity || '—') + '<br>' +
-        new Date(r.date).toLocaleString('fr-FR') + '<br>' +
-        '<i>En attente de validation</i>';
-      m.bindPopup(popupHtml);
+      m.on('click', function(){ openCitizenQuickEdit(r.id); });
       m.addTo(citizenMarkersLayer);
     });
+  }
+
+  function openCitizenQuickEdit(id){
+    var r = citizenReports.find(function(x){ return x.id === id; });
+    if(!r) return;
+    var box = document.getElementById('quickEditContent');
+    var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+    box.innerHTML = '<div class="citizen-row">' +
+      '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
+      '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
+      '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+      (r.photo ? '<img src="' + r.photo + '">' : '') +
+      '<div class="row-actions">' +
+        '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
+        '<button class="btn" data-creject="' + r.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Rejeter</button>' +
+      '</div>' +
+    '</div>';
+    wireCitizenSectionButtons(box);
+    document.getElementById('quickEditModal').classList.remove('hidden');
   }
 
   function escapeHtml(str){
@@ -1697,6 +1751,114 @@
   // ================= LISTE DES SIGNALEMENTS =================
   var listShowErrors = false;
 
+  function buildSignalRowHtml(s){
+    var clsKey = getClassification(s);
+    var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
+    var isTraite = getTraite(s);
+    var isErreur = getErreur(s);
+    var canDelete = currentRole === 'admin';
+    var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
+      return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
+    }).join('');
+    return '<div class="signal-row">' +
+      '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
+      '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
+      (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
+      '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
+      '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
+      (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
+      (s.photo ? '<img src="' + s.photo + '">' : '') +
+      '<div class="row-actions" style="flex-wrap:wrap;">' +
+        '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+        '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
+        '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
+        '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
+        (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
+      '</div>' +
+    '</div>';
+  }
+
+  function wireSignalRowButtons(content, closeModalId){
+    content.querySelectorAll('[data-goto]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-goto');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          if(closeModalId) document.getElementById(closeModalId).classList.add('hidden');
+          document.getElementById('listModal').classList.add('hidden');
+          following = false; updateFollowBtn();
+          map.setView([s.lat, s.lon], 17, { animate:true });
+        }
+      });
+    });
+    content.querySelectorAll('[data-classify]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        var id = sel.getAttribute('data-classify');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = sel.value;
+          s.traite = getTraite(s);
+          s.isErreur = getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          if(closeModalId) refreshQuickEdit(id);
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-toggletraite]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-toggletraite');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = getClassification(s);
+          s.traite = !getTraite(s);
+          s.isErreur = getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          if(closeModalId) refreshQuickEdit(id);
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-erreur]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-erreur');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.classification = getClassification(s);
+          s.traite = getTraite(s);
+          s.isErreur = !getErreur(s);
+          renderSignalMarkers();
+          renderList();
+          if(closeModalId) refreshQuickEdit(id);
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-delete]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-delete');
+        if(!confirm('Supprimer définitivement ce signalement ? Cette action est irréversible.')) return;
+        signalements = signalements.filter(function(x){ return x.id !== id; });
+        renderSignalMarkers();
+        renderList();
+        if(closeModalId) document.getElementById(closeModalId).classList.add('hidden');
+        saveSignalements();
+      });
+    });
+  }
+
+  // Réaffiche le modal d'édition rapide avec les données à jour après une action
+  // (ex: changement de classification), sans le refermer.
+  function refreshQuickEdit(id){
+    var s = signalements.find(function(x){ return x.id === id; });
+    if(!s) return;
+    var box = document.getElementById('quickEditContent');
+    box.innerHTML = buildSignalRowHtml(s);
+    wireSignalRowButtons(box, 'quickEditModal');
+  }
+
   function renderList(){
     var content = document.getElementById('listContent');
     var activeCount = signalements.filter(function(s){ return !getErreur(s); }).length;
@@ -1718,100 +1880,12 @@
       return;
     }
     var sorted = visible.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
-    content.innerHTML = toggleBar + sorted.map(function(s){
-      var clsKey = getClassification(s);
-      var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
-      var isTraite = getTraite(s);
-      var isErreur = getErreur(s);
-      var canDelete = currentRole === 'admin';
-      var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
-        return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
-      }).join('');
-      return '<div class="signal-row">' +
-        '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
-        '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
-        (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
-        '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
-        '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
-        (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
-        (s.photo ? '<img src="' + s.photo + '">' : '') +
-        '<div class="row-actions" style="flex-wrap:wrap;">' +
-          '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
-          '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
-          '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
-          '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
-          (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
-        '</div>' +
-      '</div>';
-    }).join('') + renderCitizenSection();
+    content.innerHTML = toggleBar + sorted.map(buildSignalRowHtml).join('') + renderCitizenSection();
 
     wireToggleErrorsButton();
     wireCitizenSectionButtons(content);
     updateCitizenBadge();
-
-    content.querySelectorAll('[data-goto]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.getAttribute('data-goto');
-        var s = signalements.find(function(x){ return x.id === id; });
-        if(s){
-          document.getElementById('listModal').classList.add('hidden');
-          following = false; updateFollowBtn();
-          map.setView([s.lat, s.lon], 17, { animate:true });
-        }
-      });
-    });
-    content.querySelectorAll('[data-classify]').forEach(function(sel){
-      sel.addEventListener('change', function(){
-        var id = sel.getAttribute('data-classify');
-        var s = signalements.find(function(x){ return x.id === id; });
-        if(s){
-          s.classification = sel.value;
-          s.traite = getTraite(s);
-          s.isErreur = getErreur(s);
-          renderSignalMarkers();
-          renderList();
-          saveSignalements();
-        }
-      });
-    });
-    content.querySelectorAll('[data-toggletraite]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.getAttribute('data-toggletraite');
-        var s = signalements.find(function(x){ return x.id === id; });
-        if(s){
-          s.classification = getClassification(s);
-          s.traite = !getTraite(s);
-          s.isErreur = getErreur(s);
-          renderSignalMarkers();
-          renderList();
-          saveSignalements();
-        }
-      });
-    });
-    content.querySelectorAll('[data-erreur]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.getAttribute('data-erreur');
-        var s = signalements.find(function(x){ return x.id === id; });
-        if(s){
-          s.classification = getClassification(s);
-          s.traite = getTraite(s);
-          s.isErreur = !getErreur(s);
-          renderSignalMarkers();
-          renderList();
-          saveSignalements();
-        }
-      });
-    });
-    content.querySelectorAll('[data-delete]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.getAttribute('data-delete');
-        if(!confirm('Supprimer définitivement ce signalement ? Cette action est irréversible.')) return;
-        signalements = signalements.filter(function(x){ return x.id !== id; });
-        renderSignalMarkers();
-        renderList();
-        saveSignalements();
-      });
-    });
+    wireSignalRowButtons(content, null);
   }
 
   function wireToggleErrorsButton(){
@@ -1832,6 +1906,9 @@
   });
   document.getElementById('btnCloseList').addEventListener('click', function(){
     document.getElementById('listModal').classList.add('hidden');
+  });
+  document.getElementById('btnCloseQuickEdit').addEventListener('click', function(){
+    document.getElementById('quickEditModal').classList.add('hidden');
   });
 
   // Rafraîchissement instantané quand on revient sur l'appli (ex: après avoir
@@ -1873,6 +1950,7 @@
   });
 
   // ---- Boot ----
+  updateFollowBtn();
   initAuth();
   loadCommuneRoads();
   loadCommuneBoundary();
