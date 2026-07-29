@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-g</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-h</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1926,10 +1926,36 @@
     enterPlacingMode();
   });
   document.getElementById('btnCancelPlace').addEventListener('click', function(){
+    if(relocatingSignalId){
+      var id = relocatingSignalId;
+      exitRelocateMode();
+      openSignalQuickEdit(id);
+      return;
+    }
     exitPlacingMode();
   });
 
   map.on('click', function(e){
+    if(relocatingSignalId){
+      var id = relocatingSignalId;
+      exitRelocateMode();
+      var s = signalements.find(function(x){ return x.id === id; });
+      if(!s) return;
+      if(!isInsideCommune(e.latlng.lat, e.latlng.lng)){
+        alert(HORS_TERRITOIRE_MSG);
+        openSignalQuickEdit(id);
+        return;
+      }
+      s.lat = e.latlng.lat;
+      s.lon = e.latlng.lng;
+      s.lastModifiedBy = getUserFullName(currentUser);
+      s.lastModifiedAt = new Date().toISOString();
+      renderSignalMarkers();
+      renderList();
+      saveSignalements();
+      openSignalQuickEdit(id);
+      return;
+    }
     if(!placingReport) return;
     exitPlacingMode();
     if(!isInsideCommune(e.latlng.lat, e.latlng.lng)){
@@ -1938,6 +1964,25 @@
     }
     openReportForm(e.latlng.lat, e.latlng.lng);
   });
+
+  // ---- Repositionnement d'un signalement existant (si le point GPS initial était imprécis) ----
+  var relocatingSignalId = null;
+
+  function enterRelocateMode(id){
+    relocatingSignalId = id;
+    following = false;
+    updateFollowBtn();
+    document.getElementById('quickEditModal').classList.add('hidden');
+    document.querySelector('#placeBanner span').textContent = '👉 Touchez la carte au bon emplacement pour repositionner ce signalement.';
+    document.getElementById('placeBanner').classList.add('show');
+    map.getContainer().style.cursor = 'crosshair';
+  }
+  function exitRelocateMode(){
+    relocatingSignalId = null;
+    document.querySelector('#placeBanner span').textContent = '👉 Touchez la carte à l\'endroit exact du signalement.';
+    document.getElementById('placeBanner').classList.remove('show');
+    map.getContainer().style.cursor = '';
+  }
 
   // ---- Compression de la photo côté navigateur avant sauvegarde ----
   var photoDataUrl = null;
@@ -2048,9 +2093,12 @@
     var isTraite = getTraite(s);
     var isErreur = getErreur(s);
     var canDelete = currentRole === 'admin';
-    var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
+    var qtyKey = s.quantity || '';
     var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
       return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
+    }).join('');
+    var qtyOptions = '<option value="">— Non renseignée —</option>' + Object.keys(QTY_LABELS).map(function(k){
+      return '<option value="' + k + '"' + (k === qtyKey ? ' selected' : '') + '>' + QTY_LABELS[k] + '</option>';
     }).join('');
 
     var originLine = '';
@@ -2073,18 +2121,22 @@
       '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
       (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
       '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
-      '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
-      '<div class="meta">Quantité : ' + escapeHtml(qtyLabel) + '</div>' +
+      '<div class="meta" id="qeCoords-' + s.id + '">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
       originLine +
       (s.note ? '<div class="note">Note : ' + escapeHtml(s.note) + '</div>' : '') +
       createdLine +
       lastModLine +
       (s.photo ? '<img src="' + s.photo + '">' : '') +
+      '<div class="field" style="margin-top:10px;">' +
+        '<label>Quantité</label>' +
+        '<select data-quantity="' + s.id + '" style="width:100%;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;">' + qtyOptions + '</select>' +
+      '</div>' +
       '<div class="row-actions" style="flex-wrap:wrap;margin-top:10px;">' +
         '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
         '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
         '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
         '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
+        '<button class="btn" data-relocate="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">📍 Repositionner</button>' +
         (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
       '</div>' +
     '</div>';
@@ -2094,6 +2146,12 @@
     content.querySelectorAll('[data-modify]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var id = btn.getAttribute('data-modify');
+        var s = signalements.find(function(x){ return x.id === id; });
+        document.getElementById('listModal').classList.add('hidden');
+        if(s){
+          following = false; updateFollowBtn();
+          map.setView([s.lat, s.lon], 17, { animate:true });
+        }
         openSignalQuickEdit(id);
       });
     });
@@ -2120,6 +2178,20 @@
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
           renderSignalMarkers();
+          renderList();
+          if(closeModalId) refreshQuickEdit(id);
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-quantity]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        var id = sel.getAttribute('data-quantity');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.quantity = sel.value || null;
+          s.lastModifiedBy = getUserFullName(currentUser);
+          s.lastModifiedAt = new Date().toISOString();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
           saveSignalements();
@@ -2158,6 +2230,12 @@
           if(closeModalId) refreshQuickEdit(id);
           saveSignalements();
         }
+      });
+    });
+    content.querySelectorAll('[data-relocate]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-relocate');
+        enterRelocateMode(id);
       });
     });
     content.querySelectorAll('[data-delete]').forEach(function(btn){
