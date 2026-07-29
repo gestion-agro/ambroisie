@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-n</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-o</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -377,8 +377,8 @@
   </div>
   <div id="legendBody">
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" checked style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" checked style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
     <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
     <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
     <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
@@ -542,8 +542,8 @@
   }).addTo(map);
 
   var roadsLayerRC = L.layerGroup().addTo(map);
-  var roadsLayerRD = L.layerGroup().addTo(map);
-  var roadsLayerRN = L.layerGroup().addTo(map);
+  var roadsLayerRD = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
+  var roadsLayerRN = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var trackLayer = L.layerGroup().addTo(map);
   var otherTracksLayer = L.layerGroup().addTo(map);
   var userMarker = null;
