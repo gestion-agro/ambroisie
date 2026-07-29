@@ -374,7 +374,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-s</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-t</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -395,6 +395,8 @@
     <div><span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> Traité</div>
     <div><span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> Doublon</div>
     <div><span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> Pas d'ambroisie</div>
+    <div><span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> Département (pas envoyé)</div>
+    <div><span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> Département (envoyé)</div>
     <div><span class="sw" style="background:#c9268a"></span> Citoyen (en attente)</div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
   </div>
@@ -1816,7 +1818,7 @@
   }
 
   document.getElementById('btnExportCSV').addEventListener('click', function(){
-    var cols = ['refNumber','date','name','lat','lon','quantity','classification','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
+    var cols = ['refNumber','date','name','lat','lon','quantity','classification','sentToDept','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
     var header = cols.join(',');
     var rows = signalements.map(function(s){
       return [
@@ -1827,6 +1829,7 @@
         s.lon,
         s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '',
         (CLASSIFICATIONS[getClassification(s)] || {}).label || '',
+        getClassification(s) === 'departement' ? (getSentToDept(s) ? 'Oui' : 'Non') : '',
         getTraite(s) ? 'Oui' : 'Non',
         getErreur(s) ? 'Oui' : 'Non',
         s.note || '',
@@ -2021,7 +2024,8 @@
     'valide':        { label: 'Validé',           color: '#2f6b3a' },
     'en_cours':      { label: 'En cours',         color: '#c98a1f' },
     'doublon':       { label: 'Doublon',          color: '#5c6bd6' },
-    'pas_ambroisie': { label: "Pas d'ambroisie",  color: '#8a8a8a' }
+    'pas_ambroisie': { label: "Pas d'ambroisie",  color: '#8a8a8a' },
+    'departement':   { label: 'Département (RD)', color: '#b5651d' }
   };
 
   // Compatibilité avec les anciens signalements enregistrés avant l'ajout de
@@ -2029,6 +2033,7 @@
   function getClassification(s){ return s.classification || 'valide'; }
   function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
   function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
+  function getSentToDept(s){ return s.sentToDept === true; }
 
   // Couleur du marqueur sur la carte : logique dédiée au terrain, distincte des
   // étiquettes de la liste. Priorité à l'info la plus utile pour un conseiller
@@ -2039,6 +2044,7 @@
     var cls = getClassification(entry);
     if(cls === 'doublon') return '#2f6bd6';
     if(cls === 'pas_ambroisie') return '#8a8a8a';
+    if(cls === 'departement') return getSentToDept(entry) ? '#6b7280' : '#b5651d'; // gris = envoyé (plus notre ressort), marron = pas encore envoyé
     return getTraite(entry) ? '#2f6b3a' : '#c0392b';
   }
 
@@ -2389,11 +2395,17 @@
   function buildSignalRowHtml(s){
     var canDelete = currentRole === 'admin';
     var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
-    var clsInfo = CLASSIFICATIONS[getClassification(s)] || CLASSIFICATIONS['valide'];
+    var clsKey = getClassification(s);
+    var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
     var isTraite = getTraite(s);
+    var isDept = clsKey === 'departement';
+    var sentToDept = getSentToDept(s);
+    var statusPill = isDept ?
+      ('<span class="status-pill' + (sentToDept ? ' done' : '') + '">' + (sentToDept ? 'Envoyé au département' : 'Pas encore envoyé') + '</span>') :
+      ('<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>');
     return '<div class="signal-row">' +
       '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
-      '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
+      statusPill +
       '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleDateString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
       '<div class="meta">Quantité : ' + escapeHtml(qtyLabel) + '</div>' +
@@ -2410,6 +2422,8 @@
     var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
     var isTraite = getTraite(s);
     var isErreur = getErreur(s);
+    var isDept = clsKey === 'departement';
+    var sentToDept = getSentToDept(s);
     var canDelete = currentRole === 'admin';
     var qtyKey = s.quantity || '';
     var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
@@ -2434,9 +2448,18 @@
     var lastModLine = (s.lastModifiedBy && s.lastModifiedAt !== s.createdAt) ?
       '<div class="meta" style="font-style:italic;">Dernière modif. par ' + escapeHtml(s.lastModifiedBy) + ' le ' + new Date(s.lastModifiedAt).toLocaleString('fr-FR') + '</div>' : '';
 
+    // Pour le statut "Département" : la mairie ne traite pas elle-même, on
+    // suit plutôt si le signalement a été transmis au département ou non.
+    var statusPill = isDept ?
+      ('<span class="status-pill' + (sentToDept ? ' done' : '') + '">' + (sentToDept ? 'Envoyé au département' : 'Pas encore envoyé au département') + '</span>') :
+      ('<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>');
+    var actionBtn = isDept ?
+      ('<button class="btn" data-toggledept="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (sentToDept ? 'Marquer non envoyé' : 'Marquer envoyé au dept.') + '</button>') :
+      ('<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>');
+
     return '<div class="signal-row">' +
       '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
-      '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
+      statusPill +
       (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
       '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta" id="qeCoords-' + s.id + '">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
@@ -2456,7 +2479,7 @@
       '<div class="row-actions" style="flex-wrap:wrap;margin-top:10px;">' +
         '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
         '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
-        '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
+        actionBtn +
         '<button class="btn" data-erreur="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isErreur ? 'Annuler erreur' : 'Erreur') + '</button>' +
         '<button class="btn" data-relocate="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">📍 Repositionner</button>' +
         (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Suppr.</button>' : '') +
@@ -2534,6 +2557,21 @@
           s.classification = getClassification(s);
           s.traite = !getTraite(s);
           s.isErreur = getErreur(s);
+          s.lastModifiedBy = getUserFullName(currentUser);
+          s.lastModifiedAt = new Date().toISOString();
+          renderSignalMarkers();
+          renderList();
+          if(closeModalId) refreshQuickEdit(id);
+          saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-toggledept]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-toggledept');
+        var s = signalements.find(function(x){ return x.id === id; });
+        if(s){
+          s.sentToDept = !getSentToDept(s);
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
           renderSignalMarkers();
