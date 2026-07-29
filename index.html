@@ -213,6 +213,14 @@
     display:flex;align-items:flex-end;justify-content:center;
   }
   #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden, #aboutModal.hidden{display:none;}
+  #customModalOverlay{
+    position:fixed;inset:0;z-index:4000;
+    background:rgba(20,25,20,.65);
+    display:flex;align-items:center;justify-content:center;
+    padding:16px;
+  }
+  #customModalOverlay.hidden{display:none;}
+  #customModalOverlay .sheet{ border-radius:16px; }
   .sheet{
     width:100%;max-width:480px;
     background:var(--panel);
@@ -366,7 +374,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-q</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-r</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -439,6 +447,12 @@
       <h3>Signalements (<span id="listCount">0</span>)</h3>
       <button class="sheet-close-x" id="btnCloseListX" title="Fermer">✕</button>
     </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <input type="text" id="listSearchInput" placeholder="🔎 Rechercher (nom, n° SM/AMB)..." style="flex:2;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;">
+      <select id="listClassifFilter" style="flex:1;font-size:13px;padding:9px 6px;border:2px solid #ccc;border-radius:8px;">
+        <option value="">Tous statuts</option>
+      </select>
+    </div>
     <div id="listContent"></div>
     <div class="sheet-actions">
       <button class="btn" id="btnCloseList">Fermer</button>
@@ -456,6 +470,14 @@
     <div class="sheet-actions">
       <button class="btn" id="btnCloseQuickEdit">Fermer</button>
     </div>
+  </div>
+</div>
+
+<div id="customModalOverlay" class="hidden">
+  <div class="sheet" style="max-width:420px;">
+    <h3 id="customModalTitle"></h3>
+    <p id="customModalMessage" style="white-space:pre-line;font-size:14px;line-height:1.5;color:var(--ink);"></p>
+    <div class="sheet-actions" id="customModalActions" style="flex-wrap:wrap;"></div>
   </div>
 </div>
 
@@ -523,6 +545,16 @@
           Les signalements officiels mairie (SM) ne sont <b>jamais</b> touchés par cette action.
         </p>
         <button class="btn" id="btnResetCitizens" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Remettre à zéro les signalements citoyens</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Export et sauvegarde</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
+          Exportez les signalements en tableur (pour FREDON, préfecture...), ou téléchargez une sauvegarde
+          complète en JSON. GitHub garde déjà tout l'historique des modifications, mais un export manuel de temps
+          en temps (ex: chaque semaine) reste une bonne habitude.
+        </p>
+        <button class="btn" id="btnExportCSV" style="width:100%;margin-bottom:8px;">📊 Exporter les signalements en CSV</button>
+        <button class="btn" id="btnExportJSON" style="width:100%;">💾 Télécharger une sauvegarde complète (JSON)</button>
       </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
@@ -1376,11 +1408,11 @@
   // Propose au conseiller d'envoyer un email de suivi au citoyen (si une adresse
   // a été renseignée), en ouvrant son client mail habituel (Mail, Thunderbird,
   // Gmail...) avec le destinataire, l'objet et le message déjà prêts.
-  function offerEmailNotification(r){
+  async function offerEmailNotification(r){
     if(!r.email) return;
-    var confirmed = confirm(
-      'Un email est associé à ce signalement (' + r.email + ').\n\n' +
-      'Voulez-vous ouvrir votre messagerie pour envoyer un email de confirmation au citoyen ?'
+    var confirmed = await customConfirm(
+      'Un email est associé à ce signalement (' + r.email + ').\n\nVoulez-vous ouvrir votre messagerie pour envoyer un email de confirmation au citoyen ?',
+      'Notifier le citoyen'
     );
     if(!confirmed) return;
 
@@ -1488,7 +1520,7 @@
           citizenSaveInFlight = false;
         }
 
-        offerEmailNotification(r);
+        await offerEmailNotification(r);
 
         // Ouvre directement la fiche du nouveau signalement officiel créé,
         // pour permettre au conseiller de compléter/vérifier tout de suite.
@@ -1498,11 +1530,12 @@
       });
     });
     content.querySelectorAll('[data-creject]').forEach(function(btn){
-      btn.addEventListener('click', function(){
+      btn.addEventListener('click', async function(){
         var id = btn.getAttribute('data-creject');
         var r = citizenReports.find(function(x){ return x.id === id; });
         if(!r) return;
-        if(!confirm('Rejeter ce signalement citoyen ? Il ne sera pas transféré et disparaîtra de la carte publique.')) return;
+        var ok = await customConfirm('Rejeter ce signalement citoyen ? Il ne sera pas transféré et disparaîtra de la carte publique.', 'Rejeter le signalement');
+        if(!ok) return;
         r.status = 'rejete';
         r.processedBy = getUserFullName(currentUser);
         r.processedAt = new Date().toISOString();
@@ -1611,10 +1644,11 @@
   document.getElementById('btnBackfillRefNumbers').addEventListener('click', async function(){
     var missing = signalements.filter(function(s){ return !s.refNumber; });
     if(missing.length === 0){
-      alert('Tous les signalements ont déjà un numéro de référence.');
+      await customAlert('Tous les signalements ont déjà un numéro de référence.');
       return;
     }
-    if(!confirm(missing.length + ' signalement(s) sans numéro. Leur attribuer un numéro maintenant ?')) return;
+    var ok = await customConfirm(missing.length + ' signalement(s) sans numéro. Leur attribuer un numéro maintenant ?');
+    if(!ok) return;
     missing.forEach(function(s){
       s.refNumber = generateSMRefNumber();
     });
@@ -1624,9 +1658,9 @@
     btn.textContent = 'Enregistrement…';
     try{
       await saveSignalements();
-      alert('Numéros attribués avec succès à ' + missing.length + ' signalement(s).');
+      await customAlert('Numéros attribués avec succès à ' + missing.length + ' signalement(s).');
     } catch(e){
-      alert('Erreur lors de l\'enregistrement. Réessayez.');
+      await customAlert('Erreur lors de l\'enregistrement. Réessayez.');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Attribuer les numéros manquants';
@@ -1636,10 +1670,11 @@
   document.getElementById('btnBackfillCitizenRefNumbers').addEventListener('click', async function(){
     var missing = citizenReports.filter(function(r){ return !r.refNumber; });
     if(missing.length === 0){
-      alert('Tous les signalements citoyens ont déjà un numéro de référence.');
+      await customAlert('Tous les signalements citoyens ont déjà un numéro de référence.');
       return;
     }
-    if(!confirm(missing.length + ' signalement(s) citoyen(s) sans numéro. Leur attribuer un numéro maintenant ?')) return;
+    var ok = await customConfirm(missing.length + ' signalement(s) citoyen(s) sans numéro. Leur attribuer un numéro maintenant ?');
+    if(!ok) return;
     missing.forEach(function(r){
       r.refNumber = generateCitizenRefNumberFallback();
     });
@@ -1649,9 +1684,9 @@
     btn.textContent = 'Enregistrement…';
     try{
       await saveCitizenReports();
-      alert('Numéros attribués avec succès à ' + missing.length + ' signalement(s) citoyen(s).');
+      await customAlert('Numéros attribués avec succès à ' + missing.length + ' signalement(s) citoyen(s).');
     } catch(e){
-      alert('Erreur lors de l\'enregistrement. Réessayez.');
+      await customAlert('Erreur lors de l\'enregistrement. Réessayez.');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Attribuer les numéros AMB manquants';
@@ -1665,15 +1700,11 @@
 
     validated.forEach(function(r){
       if(r.transferredToId){
-        // Vérifie que le signalement officiel référencé existe TOUJOURS
-        // (il a pu être supprimé depuis, avant l'ajout du nettoyage automatique).
         var stillExists = signalements.some(function(s){ return s.id === r.transferredToId; });
-        if(stillExists) return; // correctement lié, rien à faire
+        if(stillExists) return;
         broken.push(r);
         return;
       }
-      // Cherche un signalement officiel qui référence bien ce citoyen
-      // (cas d'anciens transferts faits avant l'ajout de ce suivi).
       var match = signalements.find(function(s){ return s.fromCitizenId === r.id; });
       if(match){
         r.transferredToId = match.id;
@@ -1684,7 +1715,7 @@
     });
 
     if(repaired.length === 0 && broken.length === 0){
-      alert('Tout est cohérent : aucun signalement citoyen "validé" en anomalie.');
+      await customAlert('Tout est cohérent : aucun signalement citoyen "validé" en anomalie.');
       return;
     }
 
@@ -1695,7 +1726,8 @@
         broken.map(function(r){ return '- ' + (r.refNumber || r.id); }).join('\n') +
         '\n\nLes remettre "en attente" pour permettre un nouveau transfert ?';
     }
-    if(!confirm(msg)) {
+    var ok = await customConfirm(msg, 'Résultat de la vérification');
+    if(!ok) {
       if(repaired.length > 0) saveCitizenReports();
       return;
     }
@@ -1715,9 +1747,9 @@
       renderList();
       updateCitizenBadge();
       renderCitizenMarkers();
-      alert('Réconciliation terminée.');
+      await customAlert('Réconciliation terminée.');
     } catch(e){
-      alert('Erreur lors de l\'enregistrement. Réessayez.');
+      await customAlert('Erreur lors de l\'enregistrement. Réessayez.');
     } finally {
       btnReconcile.disabled = false;
       btnReconcile.textContent = 'Vérifier la cohérence';
@@ -1727,17 +1759,18 @@
   document.getElementById('btnResetCitizens').addEventListener('click', async function(){
     var count = citizenReports.length;
     if(count === 0){
-      alert('Il n\'y a déjà aucun signalement citoyen enregistré.');
+      await customAlert('Il n\'y a déjà aucun signalement citoyen enregistré.');
       return;
     }
-    var step1 = confirm(
+    var step1 = await customConfirm(
       '⚠️ Ceci va supprimer DÉFINITIVEMENT les ' + count + ' signalement(s) citoyen(s) enregistré(s) ' +
       '(en attente, validés et rejetés confondus).\n\n' +
       'Les signalements officiels mairie (SM) ne seront PAS touchés.\n\n' +
-      'Continuer ?'
+      'Continuer ?',
+      'Remise à zéro des citoyens'
     );
     if(!step1) return;
-    var step2 = confirm('Dernière confirmation : remettre à zéro tous les signalements citoyens ? Cette action est irréversible.');
+    var step2 = await customConfirm('Dernière confirmation : remettre à zéro tous les signalements citoyens ? Cette action est irréversible.', 'Dernière confirmation');
     if(!step2) return;
 
     var btn = document.getElementById('btnResetCitizens');
@@ -1749,13 +1782,70 @@
     renderCitizenMarkers();
     try{
       await saveCitizenReports();
-      alert('Les signalements citoyens ont été remis à zéro. Les signalements mairie (SM) sont inchangés.');
+      await customAlert('Les signalements citoyens ont été remis à zéro. Les signalements mairie (SM) sont inchangés.');
     } catch(e){
-      alert('Erreur lors de l\'enregistrement. Réessayez.');
+      await customAlert('Erreur lors de l\'enregistrement. Réessayez.');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Remettre à zéro les signalements citoyens';
     }
+  });
+
+  // ================= EXPORT CSV / SAUVEGARDE JSON =================
+  function downloadFile(filename, content, mime){
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }
+
+  function csvEscape(val){
+    if(val === null || val === undefined) return '';
+    var s = String(val).replace(/"/g, '""');
+    return '"' + s + '"';
+  }
+
+  document.getElementById('btnExportCSV').addEventListener('click', function(){
+    var cols = ['refNumber','date','name','lat','lon','quantity','classification','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
+    var header = cols.join(',');
+    var rows = signalements.map(function(s){
+      return [
+        s.refNumber || '',
+        s.date ? new Date(s.date).toLocaleString('fr-FR') : '',
+        s.name || '',
+        s.lat,
+        s.lon,
+        s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '',
+        (CLASSIFICATIONS[getClassification(s)] || {}).label || '',
+        getTraite(s) ? 'Oui' : 'Non',
+        getErreur(s) ? 'Oui' : 'Non',
+        s.note || '',
+        s.fromCitizenRefNumber || '',
+        s.createdBy || '',
+        s.createdAt ? new Date(s.createdAt).toLocaleString('fr-FR') : '',
+        s.lastModifiedBy || '',
+        s.lastModifiedAt ? new Date(s.lastModifiedAt).toLocaleString('fr-FR') : ''
+      ].map(csvEscape).join(',');
+    });
+    var csv = '\uFEFF' + header + '\n' + rows.join('\n'); // \uFEFF = BOM pour un bon affichage des accents dans Excel
+    var dateStr = new Date().toISOString().slice(0,10);
+    downloadFile('signalements-belsentes-' + dateStr + '.csv', csv, 'text/csv;charset=utf-8');
+  });
+
+  document.getElementById('btnExportJSON').addEventListener('click', function(){
+    var backup = {
+      exportedAt: new Date().toISOString(),
+      exportedBy: getUserFullName(currentUser),
+      signalements: signalements,
+      citizenReports: citizenReports
+    };
+    var dateStr = new Date().toISOString().slice(0,10);
+    downloadFile('sauvegarde-ambroisie-belsentes-' + dateStr + '.json', JSON.stringify(backup, null, 2), 'application/json');
   });
 
   document.getElementById('btnShowAbout').addEventListener('click', function(){
@@ -2011,6 +2101,46 @@
   // Chrome et d'autres navigateurs bloquent la navigation directe vers une URL
   // "data:" dans un nouvel onglet (page blanche "Sans titre") ; on convertit
   // donc d'abord en Blob, ce qui fonctionne correctement partout.
+  // ================= FENÊTRES PERSONNALISÉES (remplacent alert/confirm) =================
+  function showModal(opts){
+    return new Promise(function(resolve){
+      var overlay = document.getElementById('customModalOverlay');
+      document.getElementById('customModalTitle').textContent = opts.title || '';
+      document.getElementById('customModalMessage').textContent = opts.message || '';
+      var actions = document.getElementById('customModalActions');
+      actions.innerHTML = '';
+      (opts.buttons || [{ label: 'OK', value: true, primary: true }]).forEach(function(b){
+        var btn = document.createElement('button');
+        btn.className = 'btn' + (b.primary ? ' primary' : '');
+        if(b.danger){ btn.style.color = 'var(--danger)'; btn.style.borderColor = 'var(--danger)'; }
+        btn.textContent = b.label;
+        btn.style.flex = '1 1 auto';
+        btn.style.minWidth = '100px';
+        btn.addEventListener('click', function(){
+          overlay.classList.add('hidden');
+          resolve(b.value);
+        });
+        actions.appendChild(btn);
+      });
+      overlay.classList.remove('hidden');
+    });
+  }
+
+  function customAlert(message, title){
+    return showModal({ title: title || 'Information', message: message, buttons: [{ label: 'OK', value: true, primary: true }] });
+  }
+
+  function customConfirm(message, title){
+    return showModal({
+      title: title || 'Confirmation',
+      message: message,
+      buttons: [
+        { label: 'Annuler', value: false },
+        { label: 'Confirmer', value: true, primary: true }
+      ]
+    });
+  }
+
   function openPhotoInNewTab(dataUrl){
     try{
       var parts = dataUrl.split(',');
@@ -2448,7 +2578,8 @@
       btn.addEventListener('click', async function(){
         var id = btn.getAttribute('data-delete');
         var s = signalements.find(function(x){ return x.id === id; });
-        if(!confirm('Supprimer définitivement ce signalement ? Cette action est irréversible.')) return;
+        var ok = await customConfirm('Supprimer définitivement ce signalement ? Cette action est irréversible.', 'Supprimer le signalement');
+        if(!ok) return;
         signalements = signalements.filter(function(x){ return x.id !== id; });
         renderSignalMarkers();
         renderList();
@@ -2456,25 +2587,29 @@
         await saveSignalements();
 
         // Si ce signalement provenait d'un citoyen, on laisse le conseiller
-        // choisir ce qu'il advient du signalement citoyen d'origine : soit le
-        // rejeter (il disparaît alors complètement côté public), soit le
-        // remettre "en attente" pour permettre un nouveau traitement.
+        // choisir ce qu'il advient du signalement citoyen d'origine.
         if(s && s.fromCitizenId){
           var r = citizenReports.find(function(x){ return x.id === s.fromCitizenId; });
           if(r){
-            var rejectIt = confirm(
-              'Ce signalement provenait du signalement citoyen ' + (r.refNumber || '') + '.\n\n' +
-              'OK = le REJETER (il disparaîtra complètement de la carte publique).\n' +
-              'Annuler = le remettre "en attente" (visible en orange, pour un nouveau traitement).'
-            );
-            r.status = rejectIt ? 'rejete' : 'nouveau';
-            delete r.transferredToId;
-            delete r.processedBy;
-            delete r.processedAt;
-            renderList();
-            updateCitizenBadge();
-            renderCitizenMarkers();
-            saveCitizenReports();
+            var choice = await showModal({
+              title: 'Signalement citoyen d\'origine',
+              message: 'Ce signalement provenait du signalement citoyen ' + (r.refNumber || '') + '. Que faire de son signalement d\'origine ?',
+              buttons: [
+                { label: 'Ne rien faire', value: 'none' },
+                { label: 'Remettre en attente', value: 'pending' },
+                { label: 'Rejeter (disparaît du public)', value: 'reject', danger: true, primary: true }
+              ]
+            });
+            if(choice !== 'none'){
+              r.status = choice === 'reject' ? 'rejete' : 'nouveau';
+              delete r.transferredToId;
+              delete r.processedBy;
+              delete r.processedAt;
+              renderList();
+              updateCitizenBadge();
+              renderCitizenMarkers();
+              saveCitizenReports();
+            }
           }
         }
       });
@@ -2492,12 +2627,54 @@
   }
 
   var showSMList = true;
+  var showDashboard = false;
+
+  function buildDashboardHtml(){
+    var active = signalements.filter(function(s){ return !getErreur(s); });
+    var total = active.length;
+    var traiteCount = active.filter(getTraite).length;
+    var parClassif = {};
+    Object.keys(CLASSIFICATIONS).forEach(function(k){ parClassif[k] = 0; });
+    active.forEach(function(s){ var c = getClassification(s); if(parClassif[c] !== undefined) parClassif[c]++; });
+
+    var classifRows = Object.keys(CLASSIFICATIONS).map(function(k){
+      var info = CLASSIFICATIONS[k];
+      return '<div class="meta"><span class="sw" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + info.color + ';margin-right:4px;"></span>' + info.label + ' : <b>' + parClassif[k] + '</b></div>';
+    }).join('');
+
+    var scPending = citizenReports.filter(function(r){ return r.status === 'nouveau'; }).length;
+    var scProcessed = citizenReports.filter(function(r){ return r.status === 'valide' || r.status === 'rejete'; }).length;
+
+    return '<div class="citizen-row" style="margin-bottom:14px;">' +
+      '<div class="meta">Total signalements actifs (SM) : <b>' + total + '</b></div>' +
+      '<div class="meta">Traités : <b>' + traiteCount + '</b> · Non traités : <b>' + (total - traiteCount) + '</b></div>' +
+      classifRows +
+      '<div class="meta" style="margin-top:8px;border-top:1px solid #ddd;padding-top:6px;">Signalements citoyens en attente : <b>' + scPending + '</b></div>' +
+      '<div class="meta">Signalements citoyens traités (historique) : <b>' + scProcessed + '</b></div>' +
+    '</div>';
+  }
+
+  function wireDashboardToggle(){
+    var btn = document.getElementById('btnToggleDashboard');
+    if(btn){
+      btn.addEventListener('click', function(){
+        showDashboard = !showDashboard;
+        renderList();
+      });
+    }
+  }
+  var listSearchQuery = '';
+  var listClassifFilter = '';
 
   function renderList(){
     var content = document.getElementById('listContent');
     var activeCount = signalements.filter(function(s){ return !getErreur(s); }).length;
     var errorCount = signalements.length - activeCount;
     document.getElementById('listCount').textContent = activeCount;
+
+    var dashboardHeader = '<div id="btnToggleDashboard" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);">' +
+      '<b style="font-size:14px;">' + (showDashboard ? '▾' : '▸') + ' 📊 Tableau de bord</b>' +
+      '</div>' + (showDashboard ? buildDashboardHtml() : '');
 
     var smHeader = '<div id="btnToggleSMList" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:2px solid var(--ink);border-radius:10px;background:var(--paper);">' +
       '<b style="font-size:14px;">' + (showSMList ? '▾' : '▸') + ' 📋 Signalements officiels (' + activeCount + ')</b>' +
@@ -2508,12 +2685,27 @@
         (listShowErrors ? 'Masquer les signalements erronés' : 'Voir aussi les erronés (' + errorCount + ')') +
       '</button></div>' : '';
 
-    var toggleBar = smHeader + errorsToggle;
+    var toggleBar = dashboardHeader + smHeader + errorsToggle;
 
     var visible = signalements.filter(function(s){ return listShowErrors || !getErreur(s); });
 
+    // Filtre par classification
+    if(listClassifFilter){
+      visible = visible.filter(function(s){ return getClassification(s) === listClassifFilter; });
+    }
+    // Recherche texte (nom du conseiller/citoyen, numéro SM, numéro AMB d'origine)
+    if(listSearchQuery){
+      var q = listSearchQuery.toLowerCase();
+      visible = visible.filter(function(s){
+        return (s.name || '').toLowerCase().indexOf(q) !== -1 ||
+               (s.refNumber || '').toLowerCase().indexOf(q) !== -1 ||
+               (s.fromCitizenRefNumber || '').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+
     if(!showSMList){
       content.innerHTML = toggleBar + renderCitizenSection();
+      wireDashboardToggle();
       wireToggleSMButton();
       wireCitizenSectionButtons(content);
       updateCitizenBadge();
@@ -2521,8 +2713,10 @@
     }
 
     if(visible.length === 0){
-      content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">Aucun signalement pour l\'instant.</p>' + renderCitizenSection();
+      var emptyMsg = (listSearchQuery || listClassifFilter) ? 'Aucun signalement ne correspond à cette recherche/filtre.' : 'Aucun signalement pour l\'instant.';
+      content.innerHTML = toggleBar + '<p style="color:var(--muted);font-size:13px;">' + emptyMsg + '</p>' + renderCitizenSection();
       wireToggleErrorsButton();
+      wireDashboardToggle();
       wireToggleSMButton();
       wireCitizenSectionButtons(content);
       updateCitizenBadge();
@@ -2532,6 +2726,7 @@
     content.innerHTML = toggleBar + sorted.map(buildSignalRowHtml).join('') + renderCitizenSection();
 
     wireToggleErrorsButton();
+    wireDashboardToggle();
     wireToggleSMButton();
     wireCitizenSectionButtons(content);
     updateCitizenBadge();
@@ -2634,6 +2829,33 @@
       alert('Toujours impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.');
     });
   });
+
+  // ---- Recherche et filtre dans la liste (contrôles statiques, hors re-rendu) ----
+  (function initListSearchFilter(){
+    var searchInput = document.getElementById('listSearchInput');
+    var classifSelect = document.getElementById('listClassifFilter');
+
+    Object.keys(CLASSIFICATIONS).forEach(function(k){
+      var opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = CLASSIFICATIONS[k].label;
+      classifSelect.appendChild(opt);
+    });
+
+    var searchDebounce = null;
+    searchInput.addEventListener('input', function(){
+      clearTimeout(searchDebounce);
+      var val = searchInput.value;
+      searchDebounce = setTimeout(function(){
+        listSearchQuery = val.trim();
+        renderList();
+      }, 250);
+    });
+    classifSelect.addEventListener('change', function(){
+      listClassifFilter = classifSelect.value;
+      renderList();
+    });
+  })();
 
   // ---- Boot ----
   updateFollowBtn();
