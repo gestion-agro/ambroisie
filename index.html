@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-b</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-c</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1196,13 +1196,17 @@
   var citizenSha = null;
   var citizenSyncIntervalId = null;
 
+  var citizenSaveInFlight = false;
+
   function loadCitizenReports(silent){
+    if(citizenSaveInFlight) return Promise.resolve(); // évite d'écraser une sauvegarde en cours
     return fetch(citizenApiUrl(), {
       method: 'GET',
       headers: { 'X-App-Secret': CONFIG.APP_SECRET }
     })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(data){
+      if(citizenSaveInFlight) return; // une sauvegarde a démarré pendant la requête : on ignore ce résultat périmé
       citizenReports = data.items || [];
       citizenSha = data.sha || null;
       updateCitizenBadge();
@@ -1213,13 +1217,15 @@
   }
 
   function saveCitizenReports(){
+    citizenSaveInFlight = true;
     return fetch(citizenApiUrl(), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
       body: JSON.stringify({ items: citizenReports, sha: citizenSha })
     })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(function(data){ citizenSha = data.sha; });
+    .then(function(data){ citizenSha = data.sha; })
+    .finally(function(){ citizenSaveInFlight = false; });
   }
 
   function updateCitizenBadge(){
@@ -1282,7 +1288,7 @@
       'Votre signalement a été validé et transmis pour traitement.\n\n' +
       'Nous vous remercions pour votre vigilance.\n\n' +
       'Cordialement,\n' +
-      'La mairie de Belsentes';
+      getUserFullName(currentUser) + ', pour la mairie de Belsentes';
 
     var mailtoUrl = 'mailto:' + encodeURIComponent(r.email) +
       '?subject=' + encodeURIComponent(subject) +
@@ -1302,10 +1308,12 @@
       });
     });
     content.querySelectorAll('[data-cvalidate]').forEach(function(btn){
-      btn.addEventListener('click', function(){
+      btn.addEventListener('click', async function(){
         var id = btn.getAttribute('data-cvalidate');
         var r = citizenReports.find(function(x){ return x.id === id; });
         if(!r) return;
+        btn.disabled = true;
+        btn.textContent = 'Validation…';
         var qtyLabel = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' }[r.quantity] || r.quantity;
         var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
         var entry = {
@@ -1327,8 +1335,22 @@
         updateCitizenBadge();
         renderCitizenMarkers();
         document.getElementById('quickEditModal').classList.add('hidden');
-        saveSignalements();
-        saveCitizenReports();
+
+        // On attend que la sauvegarde soit réellement confirmée par le serveur
+        // avant de continuer, pour éviter qu'un rechargement automatique
+        // concurrent n'écrase ce changement avec une version pas encore à jour
+        // (c'est ce qui provoquait le signalement citoyen qui "revenait" en
+        // attente, avec un doublon du signalement officiel créé à côté).
+        citizenSaveInFlight = true;
+        try{
+          await saveSignalements();
+          await saveCitizenReports();
+        } catch(e){
+          console.warn('Erreur lors de la sauvegarde de la validation', e);
+        } finally {
+          citizenSaveInFlight = false;
+        }
+
         offerEmailNotification(r);
       });
     });
@@ -1522,7 +1544,10 @@
     document.getElementById('syncBadge').classList.remove('show');
   }
 
+  var signalSaveInFlight = false;
+
   function loadSignalements(silent){
+    if(signalSaveInFlight) return; // évite d'écraser une sauvegarde en cours
     if(!silent) showSync('Synchronisation…');
     fetch(CONFIG.WORKER_URL, {
       method: 'GET',
@@ -1533,6 +1558,7 @@
       return r.json();
     })
     .then(function(data){
+      if(signalSaveInFlight) return; // sauvegarde démarrée entre-temps : résultat périmé, on l'ignore
       signalements = data.items || [];
       ghFileSha = data.sha || null;
       renderSignalMarkers();
@@ -1558,6 +1584,7 @@
 
   function saveSignalements(){
     showSync('Enregistrement…');
+    signalSaveInFlight = true;
     return fetch(CONFIG.WORKER_URL, {
       method: 'PUT',
       headers: {
@@ -1578,6 +1605,9 @@
       console.error('Erreur sauvegarde', e);
       hideSync();
       alert('Impossible d\'enregistrer. Vérifiez votre connexion. Le signalement reste visible localement pour l\'instant.');
+    })
+    .finally(function(){
+      signalSaveInFlight = false;
     });
   }
 
