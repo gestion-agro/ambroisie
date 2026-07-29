@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-o</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-p</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -515,6 +515,14 @@
           Répare le lien s'il existe, ou remet en attente ceux dont le transfert a échoué.
         </p>
         <button class="btn" id="btnReconcileCitizens" style="width:100%;">Vérifier la cohérence</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;color:var(--danger);">⚠️ Remise à zéro des signalements citoyens</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
+          Supprime <b>tous</b> les signalements citoyens (en attente, validés, rejetés) de la base publique.
+          Les signalements officiels mairie (SM) ne sont <b>jamais</b> touchés par cette action.
+        </p>
+        <button class="btn" id="btnResetCitizens" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Remettre à zéro les signalements citoyens</button>
       </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
@@ -1700,6 +1708,40 @@
     } finally {
       btnReconcile.disabled = false;
       btnReconcile.textContent = 'Vérifier la cohérence';
+    }
+  });
+
+  document.getElementById('btnResetCitizens').addEventListener('click', async function(){
+    var count = citizenReports.length;
+    if(count === 0){
+      alert('Il n\'y a déjà aucun signalement citoyen enregistré.');
+      return;
+    }
+    var step1 = confirm(
+      '⚠️ Ceci va supprimer DÉFINITIVEMENT les ' + count + ' signalement(s) citoyen(s) enregistré(s) ' +
+      '(en attente, validés et rejetés confondus).\n\n' +
+      'Les signalements officiels mairie (SM) ne seront PAS touchés.\n\n' +
+      'Continuer ?'
+    );
+    if(!step1) return;
+    var step2 = confirm('Dernière confirmation : remettre à zéro tous les signalements citoyens ? Cette action est irréversible.');
+    if(!step2) return;
+
+    var btn = document.getElementById('btnResetCitizens');
+    btn.disabled = true;
+    btn.textContent = 'Remise à zéro…';
+    citizenReports = [];
+    renderList();
+    updateCitizenBadge();
+    renderCitizenMarkers();
+    try{
+      await saveCitizenReports();
+      alert('Les signalements citoyens ont été remis à zéro. Les signalements mairie (SM) sont inchangés.');
+    } catch(e){
+      alert('Erreur lors de l\'enregistrement. Réessayez.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Remettre à zéro les signalements citoyens';
     }
   });
 
