@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-d</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-e</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -498,6 +498,11 @@
         <input type="text" id="newUserPass" placeholder="mot de passe temporaire">
       </div>
       <button class="btn primary" id="btnAddUser" style="width:100%;">Créer l'utilisateur</button>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Numéros de référence (SM)</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Attribue un numéro (SM-AAMMJJ-XXXX) à tous les signalements existants qui n'en ont pas encore.</p>
+        <button class="btn" id="btnBackfillRefNumbers" style="width:100%;">Attribuer les numéros manquants</button>
+      </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
     <button class="btn" id="btnLogout" style="width:100%;margin-top:16px;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Déconnexion</button>
@@ -1359,6 +1364,7 @@
         var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
         var entry = {
           id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+          refNumber: generateSMRefNumber(),
           lat: r.lat,
           lon: r.lon,
           name: fullName + ' (signalement citoyen ' + (r.refNumber || '') + ')',
@@ -1510,6 +1516,31 @@
   });
   document.getElementById('btnCancelAccount').addEventListener('click', function(){
     document.getElementById('accountModal').classList.add('hidden');
+  });
+
+  document.getElementById('btnBackfillRefNumbers').addEventListener('click', async function(){
+    var missing = signalements.filter(function(s){ return !s.refNumber; });
+    if(missing.length === 0){
+      alert('Tous les signalements ont déjà un numéro de référence.');
+      return;
+    }
+    if(!confirm(missing.length + ' signalement(s) sans numéro. Leur attribuer un numéro maintenant ?')) return;
+    missing.forEach(function(s){
+      s.refNumber = generateSMRefNumber();
+    });
+    renderList();
+    var btn = document.getElementById('btnBackfillRefNumbers');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement…';
+    try{
+      await saveSignalements();
+      alert('Numéros attribués avec succès à ' + missing.length + ' signalement(s).');
+    } catch(e){
+      alert('Erreur lors de l\'enregistrement. Réessayez.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Attribuer les numéros manquants';
+    }
   });
 
   document.getElementById('btnLogout').addEventListener('click', function(){
@@ -1860,6 +1891,17 @@
 
   var QTY_LABELS = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' };
 
+  // Génère un numéro de référence lisible et unique pour un signalement officiel
+  // (ex: SM-260729-4821), distinct des numéros "AMB-" des signalements citoyens.
+  function generateSMRefNumber(){
+    var d = new Date();
+    var yy = String(d.getFullYear()).slice(2);
+    var mm = String(d.getMonth() + 1).padStart(2, '0');
+    var dd = String(d.getDate()).padStart(2, '0');
+    var rand = Math.floor(1000 + Math.random() * 9000);
+    return 'SM-' + yy + mm + dd + '-' + rand;
+  }
+
   document.getElementById('btnSaveReport').addEventListener('click', function(){
     if(!pendingReportCoords) return;
     var err = document.getElementById('reportFormErr');
@@ -1867,6 +1909,7 @@
     var extraNote = document.getElementById('reportNote').value.trim();
     var entry = {
       id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      refNumber: generateSMRefNumber(),
       lat: pendingReportCoords.lat,
       lon: pendingReportCoords.lon,
       name: getUserFullName(currentUser),
@@ -1903,7 +1946,7 @@
       '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
       '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
       (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
-      '<div class="meta">' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
+      '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
       (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
       lastModLine +
