@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-j</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-k</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -507,6 +507,14 @@
         <h3 style="font-size:14px;">Numéros de référence (signalements citoyens)</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Attribue un numéro (AMB-AAMMJJ-XXXX) aux anciens signalements citoyens qui affichent encore leur identifiant technique.</p>
         <button class="btn" id="btnBackfillCitizenRefNumbers" style="width:100%;">Attribuer les numéros AMB manquants</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Cohérence citoyens ↔ signalements officiels</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
+          Vérifie que chaque signalement citoyen marqué "validé" a bien un signalement officiel correspondant.
+          Répare le lien s'il existe, ou remet en attente ceux dont le transfert a échoué.
+        </p>
+        <button class="btn" id="btnReconcileCitizens" style="width:100%;">Vérifier la cohérence</button>
       </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
@@ -1611,6 +1619,67 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Attribuer les numéros AMB manquants';
+    }
+  });
+
+  document.getElementById('btnReconcileCitizens').addEventListener('click', async function(){
+    var validated = citizenReports.filter(function(r){ return r.status === 'valide'; });
+    var repaired = [];
+    var broken = [];
+
+    validated.forEach(function(r){
+      if(r.transferredToId){
+        // Déjà correctement lié, rien à faire.
+        return;
+      }
+      // Cherche un signalement officiel qui référence bien ce citoyen
+      // (cas d'anciens transferts faits avant l'ajout de ce suivi).
+      var match = signalements.find(function(s){ return s.fromCitizenId === r.id; });
+      if(match){
+        r.transferredToId = match.id;
+        repaired.push(r);
+      } else {
+        broken.push(r);
+      }
+    });
+
+    if(repaired.length === 0 && broken.length === 0){
+      alert('Tout est cohérent : aucun signalement citoyen "validé" en anomalie.');
+      return;
+    }
+
+    var msg = '';
+    if(repaired.length > 0) msg += repaired.length + ' lien(s) réparé(s) automatiquement (le signalement officiel existait bien).\n';
+    if(broken.length > 0){
+      msg += broken.length + ' signalement(s) citoyen(s) marqué(s) "validé" SANS signalement officiel correspondant :\n' +
+        broken.map(function(r){ return '- ' + (r.refNumber || r.id); }).join('\n') +
+        '\n\nLes remettre "en attente" pour permettre un nouveau transfert ?';
+    }
+    if(!confirm(msg)) {
+      if(repaired.length > 0) saveCitizenReports();
+      return;
+    }
+
+    broken.forEach(function(r){
+      r.status = 'nouveau';
+      delete r.processedBy;
+      delete r.processedAt;
+    });
+
+    var btnReconcile = document.getElementById('btnReconcileCitizens');
+    btnReconcile.disabled = true;
+    btnReconcile.textContent = 'Enregistrement…';
+    try{
+      await saveCitizenReports();
+      renderList();
+      updateCitizenBadge();
+      renderCitizenMarkers();
+      alert('Réconciliation terminée.');
+    } catch(e){
+      alert('Erreur lors de l\'enregistrement. Réessayez.');
+    } finally {
+      btnReconcile.disabled = false;
+      btnReconcile.textContent = 'Vérifier la cohérence';
     }
   });
 
