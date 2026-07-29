@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-h</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-i</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -2123,13 +2123,17 @@
       '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta" id="qeCoords-' + s.id + '">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
       originLine +
-      (s.note ? '<div class="note">Note : ' + escapeHtml(s.note) + '</div>' : '') +
       createdLine +
       lastModLine +
       (s.photo ? '<img src="' + s.photo + '">' : '') +
       '<div class="field" style="margin-top:10px;">' +
         '<label>Quantité</label>' +
         '<select data-quantity="' + s.id + '" style="width:100%;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;">' + qtyOptions + '</select>' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>Note</label>' +
+        '<textarea data-noteedit="' + s.id + '" style="width:100%;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;min-height:60px;font-family:inherit;">' + escapeHtml(s.note || '') + '</textarea>' +
+        '<button class="btn" data-savenote="' + s.id + '" style="width:100%;margin-top:6px;padding:8px;font-size:11px;">Enregistrer la note</button>' +
       '</div>' +
       '<div class="row-actions" style="flex-wrap:wrap;margin-top:10px;">' +
         '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
@@ -2229,6 +2233,30 @@
           renderList();
           if(closeModalId) refreshQuickEdit(id);
           saveSignalements();
+        }
+      });
+    });
+    content.querySelectorAll('[data-savenote]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-savenote');
+        var s = signalements.find(function(x){ return x.id === id; });
+        var textarea = content.querySelector('[data-noteedit="' + id + '"]');
+        if(s && textarea){
+          s.note = textarea.value.trim() || null;
+          s.lastModifiedBy = getUserFullName(currentUser);
+          s.lastModifiedAt = new Date().toISOString();
+          var originalText = btn.textContent;
+          btn.textContent = 'Enregistrement…';
+          btn.disabled = true;
+          saveSignalements().then(function(){
+            btn.textContent = 'Note enregistrée ✓';
+            setTimeout(function(){ btn.textContent = originalText; btn.disabled = false; }, 1500);
+          }).catch(function(){
+            btn.textContent = originalText;
+            btn.disabled = false;
+            alert('Erreur lors de l\'enregistrement de la note.');
+          });
+          renderList();
         }
       });
     });
