@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-o</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-p</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -599,6 +599,11 @@
   // administratif RÉEL de la commune plutôt qu'un simple rectangle, qui
   // débordait sur les communes voisines.
   var INSEE_CODE = "07165";
+  // Identifiant de la relation OpenStreetMap correspondant à Belsentes (retrouvé
+  // via la fiche Wikidata Q59695357, propriété "OpenStreetMap relation ID"),
+  // qui est aussi la relation utilisée par la carte Wikipédia. Bien plus fiable
+  // qu'une recherche par tags, qui pouvait remonter l'ancienne commune déléguée.
+  var OSM_RELATION_ID = "9105126";
   // Boîte englobante de secours, utilisée uniquement si la requête par
   // contour administratif échoue ou ne renvoie rien (ex: tag manquant dans OSM).
   var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
@@ -804,7 +809,7 @@
       }
     } catch(e){ console.warn('Lecture cache contour impossible', e); }
 
-    var query = '[out:json][timeout:40];relation["ref:INSEE"="' + INSEE_CODE + '"]["boundary"="administrative"]["admin_level"="8"];out geom;';
+    var query = '[out:json][timeout:40];relation(' + OSM_RELATION_ID + ');out geom;';
     fetchFromOverpass(query, function(data){
       processBoundaryData(data);
       try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data })); }
