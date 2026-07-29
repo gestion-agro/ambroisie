@@ -352,7 +352,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-i</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-28-j</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1909,6 +1909,18 @@
   });
   document.getElementById('btnCloseQuickEdit').addEventListener('click', function(){
     document.getElementById('quickEditModal').classList.add('hidden');
+  });
+
+  // Fermer en touchant en dehors du panneau (sur le fond assombri), pratique
+  // quand la liste est longue et qu'on ne veut pas tout redescendre pour
+  // atteindre le bouton "Fermer".
+  ['listModal', 'quickEditModal', 'accountModal'].forEach(function(id){
+    var modalEl = document.getElementById(id);
+    modalEl.addEventListener('click', function(e){
+      if(e.target === modalEl){
+        modalEl.classList.add('hidden');
+      }
+    });
   });
 
   // Rafraîchissement instantané quand on revient sur l'appli (ex: après avoir
