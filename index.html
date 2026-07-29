@@ -207,12 +207,12 @@
   }
 
   /* ---- report modal ---- */
-  #reportModal, #listModal, #accountModal, #quickEditModal{
+  #reportModal, #listModal, #accountModal, #quickEditModal, #aboutModal{
     position:fixed;inset:0;z-index:2500;
     background:rgba(20,25,20,.55);
     display:flex;align-items:flex-end;justify-content:center;
   }
-  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden{display:none;}
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden, #aboutModal.hidden{display:none;}
   .sheet{
     width:100%;max-width:480px;
     background:var(--panel);
@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-g</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -511,6 +511,33 @@
     </div>
     <div class="loginErr" id="accountErr"></div>
     <button class="btn" id="btnLogout" style="width:100%;margin-top:16px;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Déconnexion</button>
+    <button class="btn" id="btnShowAbout" style="width:100%;margin-top:10px;">ℹ️ À propos de l'application</button>
+  </div>
+</div>
+
+<div id="aboutModal" class="hidden">
+  <div class="sheet">
+    <div class="sheet-header">
+      <h3>À propos</h3>
+      <button class="sheet-close-x" id="btnCloseAboutX" title="Fermer">✕</button>
+    </div>
+    <p style="font-size:13px;line-height:1.6;">
+      <b>🌿 Inspection Ambroisie — Belsentes</b><br>
+      Application interne de suivi et de signalement de l'ambroisie sur le territoire de la commune de Belsentes (07165),
+      à destination des conseillers municipaux.
+    </p>
+    <p style="font-size:13px;line-height:1.6;">
+      Les signalements validés sont transmis pour traitement, avec un suivi de classification (validé / en cours / doublon /
+      pas d'ambroisie) destiné notamment au signalement auprès de FREDON.
+    </p>
+    <p style="font-size:13px;line-height:1.6;">
+      Une page publique associée permet aux habitants de signaler eux-mêmes de l'ambroisie, avec validation obligatoire
+      par un conseiller avant transfert dans la base officielle.
+    </p>
+    <p style="font-size:12px;color:var(--muted);">Version affichée en haut de l'écran (ex: v2026-07-29-f).</p>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseAbout" style="width:100%;">Fermer</button>
+    </div>
   </div>
 </div>
 
@@ -1275,6 +1302,7 @@
           '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
           '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
           '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+          (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
           (r.photo ? '<img src="' + r.photo + '">' : '') +
           '<div class="row-actions">' +
             '<button class="btn" data-cgoto="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
@@ -1365,23 +1393,30 @@
         if(!r) return;
         btn.disabled = true;
         btn.textContent = 'Validation…';
-        var qtyLabel = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' }[r.quantity] || r.quantity;
         var fullName = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || 'Anonyme';
+        var nowIsoTransfer = new Date().toISOString();
         var entry = {
           id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
           refNumber: generateSMRefNumber(),
           lat: r.lat,
           lon: r.lon,
-          name: fullName + ' (signalement citoyen ' + (r.refNumber || '') + ')',
-          note: 'Quantité estimée : ' + qtyLabel,
+          name: fullName,
+          quantity: r.quantity,
+          note: r.note || null,
           photo: r.photo || null,
           date: r.date,
           classification: 'valide',
           traite: false,
           isErreur: false,
           fromCitizenId: r.id,
+          fromCitizenRefNumber: r.refNumber || null,
+          citizenFirstName: r.firstName || null,
+          citizenLastName: r.lastName || null,
+          citizenEmail: r.email || null,
+          createdBy: getUserFullName(currentUser),
+          createdAt: nowIsoTransfer,
           lastModifiedBy: getUserFullName(currentUser),
-          lastModifiedAt: new Date().toISOString()
+          lastModifiedAt: nowIsoTransfer
         };
         signalements.push(entry);
         r.status = 'valide';
@@ -1571,6 +1606,16 @@
       btn.disabled = false;
       btn.textContent = 'Attribuer les numéros AMB manquants';
     }
+  });
+
+  document.getElementById('btnShowAbout').addEventListener('click', function(){
+    document.getElementById('aboutModal').classList.remove('hidden');
+  });
+  document.getElementById('btnCloseAbout').addEventListener('click', function(){
+    document.getElementById('aboutModal').classList.add('hidden');
+  });
+  document.getElementById('btnCloseAboutX').addEventListener('click', function(){
+    document.getElementById('aboutModal').classList.add('hidden');
   });
 
   document.getElementById('btnLogout').addEventListener('click', function(){
@@ -1801,6 +1846,7 @@
       '<div class="meta"><b>' + escapeHtml(r.refNumber || r.id) + '</b> · ' + new Date(r.date).toLocaleString('fr-FR') + '</div>' +
       '<div class="meta">' + escapeHtml(fullName) + (r.email ? ' · ' + escapeHtml(r.email) : '') + '</div>' +
       '<div class="meta">Quantité : ' + escapeHtml(r.quantity || '—') + ' · ' + r.lat.toFixed(5) + ', ' + r.lon.toFixed(5) + '</div>' +
+      (r.note ? '<div class="note">Note : ' + escapeHtml(r.note) + '</div>' : '') +
       (r.photo ? '<img src="' + r.photo + '">' : '') +
       '<div class="row-actions">' +
         '<button class="btn primary" data-cvalidate="' + r.id + '" style="flex:1;padding:8px;font-size:11px;">Valider et transférer</button>' +
@@ -1948,18 +1994,22 @@
     var err = document.getElementById('reportFormErr');
     if(!selectedQtyInternal){ err.textContent = 'Merci d\'indiquer une quantité estimée.'; return; }
     var extraNote = document.getElementById('reportNote').value.trim();
+    var nowIso = new Date().toISOString();
     var entry = {
       id: 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
       refNumber: generateSMRefNumber(),
       lat: pendingReportCoords.lat,
       lon: pendingReportCoords.lon,
       name: getUserFullName(currentUser),
-      note: 'Quantité estimée : ' + QTY_LABELS[selectedQtyInternal] + (extraNote ? ' — ' + extraNote : ''),
+      quantity: selectedQtyInternal,
+      note: extraNote || null,
       photo: photoDataUrl || null,
-      date: new Date().toISOString(),
+      date: nowIso,
       classification: 'valide', // un signalement fait directement par un conseiller est considéré validé d'emblée
       traite: false,
-      isErreur: false
+      isErreur: false,
+      createdBy: getUserFullName(currentUser),
+      createdAt: nowIso
     };
     signalements.push(entry);
     renderSignalMarkers();
@@ -1972,27 +2022,65 @@
   // ================= LISTE DES SIGNALEMENTS =================
   var listShowErrors = false;
 
+  // ---- Version compacte pour la liste : juste l'essentiel + Modifier/Supprimer ----
   function buildSignalRowHtml(s){
+    var canDelete = currentRole === 'admin';
+    var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
+    var clsInfo = CLASSIFICATIONS[getClassification(s)] || CLASSIFICATIONS['valide'];
+    var isTraite = getTraite(s);
+    return '<div class="signal-row">' +
+      '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
+      '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
+      '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleDateString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
+      '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
+      '<div class="meta">Quantité : ' + escapeHtml(qtyLabel) + '</div>' +
+      '<div class="row-actions">' +
+        '<button class="btn" data-modify="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Modifier</button>' +
+        (canDelete ? '<button class="btn" data-delete="' + s.id + '" style="flex:1;padding:8px;font-size:11px;color:var(--danger);border-color:var(--danger);">Supprimer</button>' : '') +
+      '</div>' +
+    '</div>';
+  }
+
+  // ---- Version complète pour le panneau "Modifier" : tout le détail + contrôles ----
+  function buildSignalDetailHtml(s){
     var clsKey = getClassification(s);
     var clsInfo = CLASSIFICATIONS[clsKey] || CLASSIFICATIONS['valide'];
     var isTraite = getTraite(s);
     var isErreur = getErreur(s);
     var canDelete = currentRole === 'admin';
+    var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
     var classifOptions = Object.keys(CLASSIFICATIONS).map(function(k){
       return '<option value="' + k + '"' + (k === clsKey ? ' selected' : '') + '>' + CLASSIFICATIONS[k].label + '</option>';
     }).join('');
-    var lastModLine = s.lastModifiedBy ?
+
+    var originLine = '';
+    if(s.fromCitizenId){
+      var citFullName = ((s.citizenFirstName || '') + ' ' + (s.citizenLastName || '')).trim();
+      originLine = '<div class="meta" style="border-left:3px solid #c9268a;padding-left:8px;margin:8px 0;">' +
+        '🧑 Issu du signalement citoyen <b>' + escapeHtml(s.fromCitizenRefNumber || '—') + '</b><br>' +
+        (citFullName ? escapeHtml(citFullName) : '') +
+        (s.citizenEmail ? ' · ' + escapeHtml(s.citizenEmail) : '') +
+      '</div>';
+    }
+
+    var createdLine = s.createdBy ?
+      '<div class="meta">Créé par <b>' + escapeHtml(s.createdBy) + '</b> le ' + new Date(s.createdAt || s.date).toLocaleString('fr-FR') + '</div>' : '';
+    var lastModLine = (s.lastModifiedBy && s.lastModifiedAt !== s.createdAt) ?
       '<div class="meta" style="font-style:italic;">Dernière modif. par ' + escapeHtml(s.lastModifiedBy) + ' le ' + new Date(s.lastModifiedAt).toLocaleString('fr-FR') + '</div>' : '';
+
     return '<div class="signal-row">' +
       '<span class="status-pill" style="background:' + clsInfo.color + '22;color:' + clsInfo.color + ';">' + clsInfo.label + '</span> ' +
       '<span class="status-pill' + (isTraite ? ' done' : '') + '">' + (isTraite ? 'Traité' : 'Non traité') + '</span>' +
       (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
       '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
-      (s.note ? '<div class="note">' + escapeHtml(s.note) + '</div>' : '') +
+      '<div class="meta">Quantité : ' + escapeHtml(qtyLabel) + '</div>' +
+      originLine +
+      (s.note ? '<div class="note">Note : ' + escapeHtml(s.note) + '</div>' : '') +
+      createdLine +
       lastModLine +
       (s.photo ? '<img src="' + s.photo + '">' : '') +
-      '<div class="row-actions" style="flex-wrap:wrap;">' +
+      '<div class="row-actions" style="flex-wrap:wrap;margin-top:10px;">' +
         '<button class="btn" data-goto="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
         '<select data-classify="' + s.id + '" class="btn" style="flex:1;padding:8px;font-size:11px;">' + classifOptions + '</select>' +
         '<button class="btn" data-toggletraite="' + s.id + '" style="flex:1;padding:8px;font-size:11px;">' + (isTraite ? 'Non traité' : 'Traité') + '</button>' +
@@ -2003,6 +2091,12 @@
   }
 
   function wireSignalRowButtons(content, closeModalId){
+    content.querySelectorAll('[data-modify]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-modify');
+        openSignalQuickEdit(id);
+      });
+    });
     content.querySelectorAll('[data-goto]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var id = btn.getAttribute('data-goto');
@@ -2085,7 +2179,7 @@
     var s = signalements.find(function(x){ return x.id === id; });
     if(!s) return;
     var box = document.getElementById('quickEditContent');
-    box.innerHTML = buildSignalRowHtml(s);
+    box.innerHTML = buildSignalDetailHtml(s);
     wireSignalRowButtons(box, 'quickEditModal');
   }
 
@@ -2150,7 +2244,7 @@
   // Fermer en touchant en dehors du panneau (sur le fond assombri), pratique
   // quand la liste est longue et qu'on ne veut pas tout redescendre pour
   // atteindre le bouton "Fermer".
-  ['listModal', 'quickEditModal', 'accountModal'].forEach(function(id){
+  ['listModal', 'quickEditModal', 'accountModal', 'aboutModal'].forEach(function(id){
     var modalEl = document.getElementById(id);
     modalEl.addEventListener('click', function(e){
       if(e.target === modalEl){
