@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-p</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-q</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -586,7 +586,11 @@
   var COMMUNE_CENTER = [44.9341, 4.4877];
   var COMMUNE_NAME = "Belsentes";
 
-  var map = L.map('map', { zoomControl: true, attributionControl: true })
+  // Zone utile un peu plus large que côté public (contexte routes/communes
+  // voisines utile aux conseillers), mais toujours limitée pour rester léger.
+  var MAP_BOUNDS = L.latLngBounds([44.78, 4.30], [45.09, 4.68]);
+
+  var map = L.map('map', { zoomControl: true, attributionControl: true, maxBounds: MAP_BOUNDS.pad(0.1), minZoom: 10 })
     .setView(COMMUNE_CENTER, 13);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1021,7 +1025,14 @@
         lastSharedPoint = [lat, lon];
       }
 
-      map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate:true });
+      // Si le GPS renvoie une position aberrante (hors zone utile, ex: PC sans
+      // puce GPS localisé au hasard), on ne suit pas dessus : on revient sur la
+      // commune plutôt que de partir loin de la zone de travail.
+      if(MAP_BOUNDS.contains([lat, lon])){
+        map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate:true });
+      } else {
+        map.setView(COMMUNE_CENTER, 13, { animate:true });
+      }
     }
   }
 
@@ -1065,12 +1076,14 @@
 
   // ---- Controls ----
   document.getElementById('btnCenter').addEventListener('click', function(){
-    if(lastFix){
+    if(lastFix && MAP_BOUNDS.contains(lastFix)){
       map.setView(lastFix, 17, { animate:true });
       following = true;
       updateFollowBtn();
     } else if(roadBounds){
       map.fitBounds(roadBounds, { padding:[30,30] });
+    } else {
+      map.setView(COMMUNE_CENTER, 13, { animate:true });
     }
   });
 
