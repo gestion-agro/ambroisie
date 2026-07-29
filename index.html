@@ -366,7 +366,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-n</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-o</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -2400,14 +2400,19 @@
         if(closeModalId) document.getElementById(closeModalId).classList.add('hidden');
         await saveSignalements();
 
-        // Si ce signalement provenait d'un citoyen, on remet son signalement
-        // d'origine "en attente" plutôt que de le laisser marqué "validé" en
-        // pointant vers un SM qui n'existe plus (c'est ce qui provoquait le
-        // faux "confirmé" persistant côté public).
+        // Si ce signalement provenait d'un citoyen, on laisse le conseiller
+        // choisir ce qu'il advient du signalement citoyen d'origine : soit le
+        // rejeter (il disparaît alors complètement côté public), soit le
+        // remettre "en attente" pour permettre un nouveau traitement.
         if(s && s.fromCitizenId){
           var r = citizenReports.find(function(x){ return x.id === s.fromCitizenId; });
           if(r){
-            r.status = 'nouveau';
+            var rejectIt = confirm(
+              'Ce signalement provenait du signalement citoyen ' + (r.refNumber || '') + '.\n\n' +
+              'OK = le REJETER (il disparaîtra complètement de la carte publique).\n' +
+              'Annuler = le remettre "en attente" (visible en orange, pour un nouveau traitement).'
+            );
+            r.status = rejectIt ? 'rejete' : 'nouveau';
             delete r.transferredToId;
             delete r.processedBy;
             delete r.processedAt;
