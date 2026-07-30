@@ -374,7 +374,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-t</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-u</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -563,6 +563,13 @@
         <button class="btn" id="btnExportCSV" style="width:100%;margin-bottom:8px;">📊 Exporter les signalements en CSV</button>
         <button class="btn" id="btnExportJSON" style="width:100%;">💾 Télécharger une sauvegarde complète (JSON)</button>
       </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Sécurité</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
+          Journal des connexions et modifications récentes (200 dernières entrées).
+        </p>
+        <button class="btn" id="btnShowAuditLog" style="width:100%;">📜 Voir le journal d'accès</button>
+      </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
     <button class="btn" id="btnLogout" style="width:100%;margin-top:16px;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Déconnexion</button>
@@ -616,10 +623,31 @@
 
   // ================= CONFIGURATION À REMPLIR =================
   var CONFIG = {
-    WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements",
-    APP_SECRET: "belsentes-secret-2026"   // doit être IDENTIQUE au secret APP_SECRET mis dans le Worker Cloudflare
+    WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements"
+    // Plus de secret fixe ici : l'authentification se fait maintenant par
+    // identifiant + mot de passe, vérifiés côté serveur (Worker), qui délivre
+    // un jeton de session temporaire. Rien de secret n'est plus stocké dans
+    // ce fichier visible publiquement.
   };
   // ==============================================================
+  var sessionToken = null; // jeton obtenu après connexion, utilisé pour toutes les requêtes protégées
+
+  function authHeaders(extra){
+    var h = { 'Authorization': 'Bearer ' + sessionToken };
+    if(extra) Object.assign(h, extra);
+    return h;
+  }
+
+  function workerBaseUrl(){ return CONFIG.WORKER_URL.replace('/signalements', ''); }
+
+  // Déconnecte automatiquement si le serveur signale une session expirée/invalide.
+  function handleAuthResponse(resp){
+    if(resp.status === 401){
+      logout();
+      throw new Error('Session expirée');
+    }
+    return resp;
+  }
 
   // Centre approximatif de Belsentes (07165), Ardèche
   var COMMUNE_CENTER = [44.9341, 4.4877];
@@ -1152,11 +1180,13 @@
   // ================= AUTHENTIFICATION MULTI-COMPTES =================
   var currentUser = null;   // identifiant connecté
   var currentRole = null;   // 'admin' ou 'user'
-  var users = [];           // [{username, passwordHash, role}]
-  var usersSha = null;
+  var users = [];           // [{username, role, firstName, lastName}] — jamais de mot de passe
 
-  var DEFAULT_ADMIN_USERNAME = 'clement.thieuleux';
-  var DEFAULT_ADMIN_PASSWORD = 'azerty';
+  function loginApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/login'); }
+
+  // Note : il n'y a plus d'identifiant/mot de passe par défaut codé en dur.
+  // Le tout premier compte créé (lors de la toute première connexion) devient
+  // automatiquement administrateur — voir la logique côté Worker (/login).
 
   // Si un compte n'a pas de prénom/nom enregistré, on en déduit un raisonnable
   // à partir de l'identifiant (ex: "jean.dupont" -> "Jean Dupont").
@@ -1175,46 +1205,27 @@
     return deriveNameFromUsername(username);
   }
 
-  async function sha256Hex(text){
-    var enc = new TextEncoder().encode(text);
-    var buf = await crypto.subtle.digest('SHA-256', enc);
-    return Array.from(new Uint8Array(buf)).map(function(b){
-      return b.toString(16).padStart(2,'0');
-    }).join('');
-  }
+  // Note : le hachage des mots de passe se fait désormais entièrement côté
+  // Worker (salé, renforcé). Le client envoie le mot de passe en clair
+  // uniquement via HTTPS au moment de la connexion ou de la création d'un
+  // compte — il ne le stocke ni ne le calcule jamais lui-même.
 
   function usersApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/users'); }
 
   function fetchUsers(){
     return fetch(usersApiUrl(), {
       method: 'GET',
-      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+      headers: authHeaders()
     })
+    .then(handleAuthResponse)
     .then(function(r){
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     })
     .then(function(data){
-      users = data.items || [];
-      usersSha = data.sha || null;
+      users = data.items || []; // ne contient jamais de mot de passe, même haché
       return users;
     });
-  }
-
-  function saveUsers(){
-    return fetch(usersApiUrl(), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Secret': CONFIG.APP_SECRET
-      },
-      body: JSON.stringify({ items: users, sha: usersSha })
-    })
-    .then(function(r){
-      if(!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(data){ usersSha = data.sha; });
   }
 
   // ================= TRACÉS PARTAGÉS (voir où les autres sont passés) =================
@@ -1225,7 +1236,7 @@
     try{
       var resp = await fetch(tracksApiUrl(), {
         method: 'GET',
-        headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+        headers: authHeaders()
       });
       if(!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
@@ -1257,7 +1268,7 @@
         }
         var putResp = await fetch(tracksApiUrl(), {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ items: tracks, sha: sha })
         });
         if(putResp.ok){
@@ -1307,7 +1318,7 @@
     if(citizenSaveInFlight) return Promise.resolve(); // évite d'écraser une sauvegarde en cours
     return fetch(citizenApiUrl(), {
       method: 'GET',
-      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+      headers: authHeaders()
     })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(data){
@@ -1325,7 +1336,7 @@
     citizenSaveInFlight = true;
     return fetch(citizenApiUrl(), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-App-Secret': CONFIG.APP_SECRET },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ items: citizenReports, sha: citizenSha })
     })
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -1561,25 +1572,12 @@
   }
 
   async function initAuth(){
+    var savedToken = localStorage.getItem('ambroisie_token');
     var savedUser = localStorage.getItem('ambroisie_user');
     var savedRole = localStorage.getItem('ambroisie_role');
 
-    // Charger la liste des comptes ; si elle n'existe pas encore, créer le compte admin par défaut
-    try{
-      await fetchUsers();
-      if(users.length === 0){
-        var hash = await sha256Hex(DEFAULT_ADMIN_PASSWORD);
-        var derived = deriveNameFromUsername(DEFAULT_ADMIN_USERNAME).split(' ');
-        users = [{ username: DEFAULT_ADMIN_USERNAME, passwordHash: hash, role: 'admin', firstName: derived[0] || '', lastName: derived.slice(1).join(' ') || '' }];
-        await saveUsers();
-      }
-    } catch(e){
-      console.error('Erreur chargement comptes', e);
-      document.getElementById('loginErr').textContent =
-        'Impossible de contacter le serveur de comptes. Vérifiez votre connexion.';
-    }
-
-    if(savedUser && savedRole){
+    if(savedToken && savedUser && savedRole){
+      sessionToken = savedToken;
       currentUser = savedUser;
       currentRole = savedRole;
       document.getElementById('loginScreen').classList.add('hidden');
@@ -1599,24 +1597,42 @@
     err.textContent = '';
     if(!name || !pass){ err.textContent = 'Identifiant et mot de passe requis.'; return; }
 
-    var hash = await sha256Hex(pass);
-    var found = users.find(function(u){ return u.username === name && u.passwordHash === hash; });
-    if(!found){ err.textContent = 'Identifiant ou mot de passe incorrect.'; return; }
-
-    currentUser = found.username;
-    currentRole = found.role;
-    localStorage.setItem('ambroisie_user', currentUser);
-    localStorage.setItem('ambroisie_role', currentRole);
-    document.getElementById('loginScreen').classList.add('hidden');
-    setupAccountUI();
+    var btn = document.getElementById('btnLogin');
+    btn.disabled = true;
+    try{
+      var resp = await fetch(loginApiUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name, password: pass })
+      });
+      var data = await resp.json();
+      if(!resp.ok){
+        err.textContent = data.error || 'Identifiant ou mot de passe incorrect.';
+        return;
+      }
+      sessionToken = data.token;
+      currentUser = data.username;
+      currentRole = data.role;
+      localStorage.setItem('ambroisie_token', sessionToken);
+      localStorage.setItem('ambroisie_user', currentUser);
+      localStorage.setItem('ambroisie_role', currentRole);
+      document.getElementById('loginScreen').classList.add('hidden');
+      setupAccountUI();
+    } catch(e){
+      err.textContent = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function logout(){
+    localStorage.removeItem('ambroisie_token');
     localStorage.removeItem('ambroisie_user');
     localStorage.removeItem('ambroisie_role');
     if(trackSyncIntervalId){ clearInterval(trackSyncIntervalId); trackSyncIntervalId = null; }
     if(signalSyncIntervalId){ clearInterval(signalSyncIntervalId); signalSyncIntervalId = null; }
     if(citizenSyncIntervalId){ clearInterval(citizenSyncIntervalId); citizenSyncIntervalId = null; }
+    sessionToken = null;
     currentUser = null;
     currentRole = null;
     document.getElementById('accountModal').classList.add('hidden');
@@ -1630,7 +1646,9 @@
   function setupAccountUI(){
     document.getElementById('accountWhoami').textContent = currentUser + (currentRole === 'admin' ? ' (administrateur)' : '');
     document.getElementById('adminSection').style.display = currentRole === 'admin' ? 'block' : 'none';
-    if(currentRole === 'admin') renderUserList();
+    fetchUsers().then(function(){
+      if(currentRole === 'admin') renderUserList();
+    }).catch(function(e){ console.warn('Erreur chargement comptes', e); });
     startTrackSync();
     startSignalSync();
     startCitizenSync();
@@ -1876,11 +1894,16 @@
     var np = document.getElementById('newPassword').value;
     var err = document.getElementById('accountErr');
     if(!np || np.length < 4){ err.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
-    var me = users.find(function(u){ return u.username === currentUser; });
-    if(!me){ err.textContent = 'Compte introuvable.'; return; }
-    me.passwordHash = await sha256Hex(np);
     try{
-      await saveUsers();
+      var resp = await fetch(usersApiUrl() + '/change-password', {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ newPassword: np })
+      });
+      handleAuthResponse(resp);
+      var data = await resp.json();
+      if(!resp.ok){ throw new Error(data.error || 'Erreur'); }
+      document.getElementById('newPassword').value = '';
       err.style.color = 'var(--line)';
       err.textContent = 'Mot de passe mis à jour.';
     } catch(e){
@@ -1901,10 +1924,19 @@
     box.querySelectorAll('[data-del]').forEach(function(btn){
       btn.addEventListener('click', async function(){
         var uname = btn.getAttribute('data-del');
-        if(!confirm('Supprimer l\'utilisateur ' + uname + ' ?')) return;
-        users = users.filter(function(u){ return u.username !== uname; });
-        try{ await saveUsers(); renderUserList(); }
-        catch(e){ alert('Erreur lors de la suppression.'); }
+        var ok = await customConfirm('Supprimer l\'utilisateur ' + uname + ' ?', 'Supprimer l\'utilisateur');
+        if(!ok) return;
+        try{
+          var resp = await fetch(usersApiUrl(), {
+            method: 'DELETE',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ username: uname })
+          });
+          handleAuthResponse(resp);
+          if(!resp.ok) throw new Error('Erreur');
+          await fetchUsers();
+          renderUserList();
+        } catch(e){ await customAlert('Erreur lors de la suppression.'); }
       });
     });
   }
@@ -1916,17 +1948,23 @@
     var ulast = document.getElementById('newUserLastName').value.trim();
     var err = document.getElementById('accountErr');
     if(!uname || !upass || !ufirst || !ulast){ err.textContent = 'Prénom, nom, identifiant et mot de passe requis.'; return; }
-    if(users.find(function(u){ return u.username === uname; })){ err.textContent = 'Cet identifiant existe déjà.'; return; }
-    var hash = await sha256Hex(upass);
-    users.push({ username: uname, passwordHash: hash, role: 'user', firstName: ufirst, lastName: ulast });
+    if(upass.length < 4){ err.textContent = 'Le mot de passe doit faire au moins 4 caractères.'; return; }
     try{
-      await saveUsers();
+      var resp = await fetch(usersApiUrl(), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ username: uname, password: upass, firstName: ufirst, lastName: ulast, role: 'user' })
+      });
+      handleAuthResponse(resp);
+      var data = await resp.json();
+      if(!resp.ok){ err.textContent = data.error || 'Erreur lors de la création.'; return; }
       document.getElementById('newUserName').value = '';
       document.getElementById('newUserPass').value = '';
       document.getElementById('newUserFirstName').value = '';
       document.getElementById('newUserLastName').value = '';
       err.style.color = 'var(--line)';
       err.textContent = 'Utilisateur créé.';
+      await fetchUsers();
       renderUserList();
     } catch(e){
       err.style.color = '';
@@ -1949,14 +1987,24 @@
 
   var signalSaveInFlight = false;
 
+  // Si le jeton est invalide/expiré, le Worker répond 401 : on renvoie alors
+  // proprement vers l'écran de connexion plutôt que de laisser l'appli dans
+  // un état incohérent.
+  function handleSessionExpired(){
+    if(!currentUser) return; // déjà déconnecté
+    logout();
+    document.getElementById('loginErr').textContent = 'Votre session a expiré, merci de vous reconnecter.';
+  }
+
   function loadSignalements(silent){
     if(signalSaveInFlight) return; // évite d'écraser une sauvegarde en cours
     if(!silent) showSync('Synchronisation…');
     fetch(CONFIG.WORKER_URL, {
       method: 'GET',
-      headers: { 'X-App-Secret': CONFIG.APP_SECRET }
+      headers: authHeaders()
     })
     .then(function(r){
+      if(r.status === 401){ handleSessionExpired(); throw new Error('Session expirée'); }
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     })
@@ -1990,10 +2038,7 @@
     signalSaveInFlight = true;
     return fetch(CONFIG.WORKER_URL, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Secret': CONFIG.APP_SECRET
-      },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ items: signalements, sha: ghFileSha })
     })
     .then(function(r){
