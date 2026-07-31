@@ -329,6 +329,12 @@
     padding:0 3px;
   }
   #listBadge.show{ display:flex; }
+  #listLoadingDot{
+    position:absolute;bottom:-2px;left:-2px;
+    width:14px;height:14px;border-radius:50%;
+    background:var(--amber);border:2px solid #fff;
+    animation:pulse 1.2s infinite;
+  }
   .citizen-row{
     border:2px solid var(--ink);border-radius:10px;
     padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--ink);
@@ -385,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-l</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-m</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -419,7 +425,7 @@
   </div>
 </div>
 
-<button id="btnListToggle" title="Liste des signalements">☰<span id="listBadge">0</span></button>
+<button id="btnListToggle" title="Liste des signalements">☰<span id="listBadge">0</span><span id="listLoadingDot" style="display:block;"></span></button>
 <button id="btnRoadCoverage" title="Suivi des routes parcourues">🛣️</button>
 <button id="btnReport" title="Signaler ambroisie">🌿</button>
 <button id="btnPlacePin" title="Signaler à un endroit précis sur la carte">📍</button>
@@ -1628,6 +1634,8 @@
       updateCitizenBadge();
       renderList();
       renderCitizenMarkers();
+      citizenLoadedOnce = true;
+      updateListLoadingIndicator();
     })
     .catch(function(e){ console.warn('Erreur chargement signalements citoyens', e); });
   }
@@ -2394,6 +2402,19 @@
 
   var signalSaveInFlight = false;
 
+  // Indicateur de chargement initial : tant que les signalements (mairie ou
+  // citoyens) n'ont pas encore été récupérés au moins une fois après la
+  // connexion, on affiche un petit rond animé sur le bouton ☰ — sans ça,
+  // quelqu'un qui ne connaît pas l'appli peut croire qu'il n'y a rien à voir
+  // alors que ça charge simplement (jusqu'à quelques secondes).
+  var signalementsLoadedOnce = false;
+  var citizenLoadedOnce = false;
+  function updateListLoadingIndicator(){
+    var el = document.getElementById('listLoadingDot');
+    if(!el) return;
+    el.style.display = (signalementsLoadedOnce && citizenLoadedOnce) ? 'none' : 'block';
+  }
+
   // Si le jeton est invalide/expiré, le Worker répond 401 : on renvoie alors
   // proprement vers l'écran de connexion plutôt que de laisser l'appli dans
   // un état incohérent.
@@ -2421,6 +2442,8 @@
       ghFileSha = data.sha || null;
       renderSignalMarkers();
       renderList();
+      signalementsLoadedOnce = true;
+      updateListLoadingIndicator();
       if(!silent) hideSync();
     })
     .catch(function(e){
@@ -2437,6 +2460,7 @@
   var signalSyncIntervalId = null;
 
   function startSignalSync(){
+    loadSignalements();
     signalSyncIntervalId = setInterval(function(){ loadSignalements(true); }, SIGNAL_SYNC_INTERVAL);
   }
 
@@ -2580,6 +2604,11 @@
   }
 
   function openSignalQuickEdit(id){
+    // On force l'apparition du point sur la carte dès qu'on ouvre sa fiche,
+    // même si sa catégorie est décochée dans la légende — sinon le point
+    // reste invisible et on ne voit pas ce qu'on est en train de modifier.
+    markSessionTouched(id);
+    renderSignalMarkers();
     refreshQuickEdit(id);
     document.getElementById('quickEditModal').classList.remove('hidden');
   }
@@ -3013,6 +3042,11 @@
         document.getElementById('listModal').classList.add('hidden');
         if(s){
           following = false; updateFollowBtn();
+          // On force l'affichage du point même si sa catégorie est décochée
+          // dans la légende (ex: "Traité"), sinon on centre la carte dessus
+          // sans qu'il n'apparaisse — ce qui était le bug rapporté.
+          markSessionTouched(s.id);
+          renderSignalMarkers();
           centerMapAboveModal(s.lat, s.lon, 17);
         }
         openSignalQuickEdit(id);
@@ -3026,6 +3060,8 @@
           if(closeModalId) document.getElementById(closeModalId).classList.add('hidden');
           document.getElementById('listModal').classList.add('hidden');
           following = false; updateFollowBtn();
+          markSessionTouched(s.id);
+          renderSignalMarkers();
           map.setView([s.lat, s.lon], 17, { animate:true });
         }
       });
@@ -3462,7 +3498,10 @@
   loadCommuneRoads();
   loadCommuneBoundary();
   startGps();
-  loadSignalements();
+  // Le chargement des signalements se fait maintenant via startSignalSync(),
+  // appelé après authentification (setupAccountUI) — pas besoin de l'appeler
+  // ici aussi (et un appel avant connexion échouerait de toute façon, faute
+  // de jeton valide).
 
 })();
 </script>
