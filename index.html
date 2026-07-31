@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-c</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-d</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -396,6 +396,7 @@
   </div>
   <div id="legendBody">
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
+    <div style="padding-left:22px;"><span class="sw" style="border-top:2px dashed #2f6b3a;background:none;"></span> ↳ parcourue</div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsPath" style="margin:0;"> <span class="sw" style="background:#a8a8a8"></span> Chemins de terre/privés (indicatif)</label></div>
@@ -403,13 +404,13 @@
     <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
     <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
     <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><b style="font-size:11px;">Signalements :</b></div>
-    <div><span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> À traiter</div>
-    <div><span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> Traité</div>
-    <div><span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> Doublon</div>
-    <div><span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> Pas d'ambroisie</div>
-    <div><span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> Département (pas envoyé)</div>
-    <div><span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> Département (envoyé)</div>
-    <div><span class="sw" style="background:#c9268a"></span> Citoyen (en attente)</div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigATraiter" checked style="margin:0;"> <span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> À traiter</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigTraite" style="margin:0;"> <span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> Traité</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDoublon" style="margin:0;"> <span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> Doublon</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigPasAmbroisie" style="margin:0;"> <span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> Pas d'ambroisie</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDeptNonEnvoye" checked style="margin:0;"> <span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> Département (pas envoyé)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> Département (envoyé)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> Citoyen (en attente)</label></div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
   </div>
 </div>
@@ -841,7 +842,7 @@
     if(!entry) return;
     var covered = isRoadCovered(key);
     var info = roadCoverage[key];
-    var classLabel = entry.roadClass === 'RD' ? 'Départementale (RD)' : (entry.roadClass === 'RN' ? 'Nationale (RN)' : 'Communale (RC)');
+    var classLabel = entry.roadClass === 'RD' ? 'Départementale (RD)' : (entry.roadClass === 'RN' ? 'Nationale (RN)' : (entry.roadClass === 'PATH' ? 'Chemin de terre / privé (indicatif)' : 'Communale (RC)'));
     var msg = classLabel + '\nStatut : ' + (covered ? 'Parcourue' : 'Non parcourue') +
       (covered && info ? '\nPar ' + (info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') : '');
     showModal({
@@ -858,7 +859,11 @@
 
   function renderRoadCoverageList(filterText){
     var box = document.getElementById('roadCoverageContent');
-    var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; });
+    var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; })
+      // Les chemins de terre/privés n'apparaissent ici que s'ils ont été
+      // explicitement marqués "parcourus" depuis la carte — sinon ils
+      // encombreraient la liste sans concerner l'arrachage mairie.
+      .filter(function(e){ return e.roadClass !== 'PATH' || isRoadCovered(e.key); });
     entries.sort(function(a,b){ return a.label.localeCompare(b.label, 'fr'); });
     if(filterText){
       var q = filterText.toLowerCase();
@@ -875,7 +880,7 @@
     box.innerHTML = entries.map(function(e){
       var covered = isRoadCovered(e.key);
       var info = roadCoverage[e.key];
-      var classLabel = e.roadClass === 'RD' ? 'RD' : (e.roadClass === 'RN' ? 'RN' : 'RC');
+      var classLabel = e.roadClass === 'RD' ? 'RD' : (e.roadClass === 'RN' ? 'RN' : (e.roadClass === 'PATH' ? 'Privé' : 'RC'));
       return '<div class="citizen-row">' +
         '<span class="status-pill' + (covered ? ' done' : '') + '">' + (covered ? 'Parcourue' : 'Non parcourue') + '</span> ' +
         '<span class="status-pill">' + classLabel + '</span>' +
@@ -1214,13 +1219,39 @@
       var entry = roadsIndex[key];
       var covered = isRoadCovered(key);
       entry.polylines.forEach(function(line){
-        if(covered){
-          line.setStyle({ color:'#9a9a9a', opacity:0.5, dashArray:'3 5' });
-        } else {
+        if(!covered){
           line.setStyle(entry.baseStyle);
+        } else if(entry.roadClass === 'PATH'){
+          // Chemin de terre/privé marqué parcouru : bleu pointillé, distinct
+          // du gris pointillé "indicatif" par défaut.
+          line.setStyle({ color:'#2f6bd6', weight: entry.baseStyle.weight, opacity:0.75, dashArray:'2 6' });
+        } else {
+          // Route officielle parcourue : on garde SA couleur d'origine
+          // (vert/orange/violet selon RC/RD/RN), juste en pointillé, pour
+          // rester identifiable tout en indiquant "déjà fait".
+          line.setStyle({ color: entry.baseStyle.color, weight: entry.baseStyle.weight, opacity:0.6, dashArray:'4 6' });
         }
       });
     });
+  }
+
+  // Découpe une ligne (liste de [lat,lon]) pour ne garder que les portions
+  // situées à l'intérieur de la vraie limite communale (pas juste une boîte
+  // englobante) — évite d'afficher en couleur un bout de route qui ne fait
+  // que passer en bordure de commune avant de sortir du territoire.
+  function clipLineToCommune(latlngs){
+    var segments = [];
+    var current = [];
+    latlngs.forEach(function(p){
+      if(isInsideCommune(p[0], p[1])){
+        current.push(p);
+      } else if(current.length){
+        segments.push(current);
+        current = [];
+      }
+    });
+    if(current.length) segments.push(current);
+    return segments;
   }
 
   function drawRoads(osmData){
@@ -1233,23 +1264,21 @@
     osmData.elements.forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
+      var clipped = clipLineToCommune(latlngs);
+      if(clipped.length === 0) return; // route entièrement hors commune : on ne l'affiche pas
       var tags = el.tags || {};
       var roadClass = classifyRoad(tags);
       var style = roadStyle(tags.highway, roadClass);
-      var line = L.polyline(latlngs, style);
+      var line = L.polyline(clipped, style);
       var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
       var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
       line.addTo(targetLayer);
-      latlngs.forEach(function(p){ bounds.push(p); });
+      clipped.forEach(function(seg){ seg.forEach(function(p){ bounds.push(p); }); });
 
-      // Les chemins de terre/privés (PATH) sont indicatifs seulement : on ne
-      // les inclut pas dans le suivi de couverture des routes, qui ne
-      // concerne que les vraies voies (RC/RD/RN) relevant de l'arrachage.
-      if(roadClass === 'PATH'){
-        line.bindPopup('<b>' + label + '</b><br>Chemin de terre / privé — indicatif, hors suivi');
-        return;
-      }
-
+      // Les chemins de terre/privés (PATH) restent exclus de la liste "Suivi
+      // des routes" par défaut (indicatif, hors ressort de l'arrachage), mais
+      // peuvent quand même être marqués "parcourus" directement au toucher sur
+      // la carte — ils apparaîtront alors dans la liste une fois marqués.
       var key = roadKeyFor(tags, el.id, roadClass);
       if(!roadsIndex[key]){
         roadsIndex[key] = { key: key, label: label, roadClass: roadClass, polylines: [], baseStyle: style };
@@ -2467,12 +2496,28 @@
     });
   }
 
+  // Catégorie de visibilité d'un signalement (indépendante de sa couleur),
+  // utilisée pour le filtrage d'affichage/masquage dans la légende.
+  var signalVisibility = {
+    a_traiter: true, traite: false, doublon: false, pas_ambroisie: false,
+    dept_non_envoye: true, dept_envoye: false, citoyen: true
+  };
+
+  function signalCategoryFor(entry){
+    var cls = getClassification(entry);
+    if(cls === 'doublon') return 'doublon';
+    if(cls === 'pas_ambroisie') return 'pas_ambroisie';
+    if(cls === 'departement') return getSentToDept(entry) ? 'dept_envoye' : 'dept_non_envoye';
+    return getTraite(entry) ? 'traite' : 'a_traiter';
+  }
+
   function renderSignalMarkers(){
     signalMarkersLayer.clearLayers();
     signalements.forEach(function(s){
       // Les signalements marqués "erreur" (faux positif) sont masqués de la carte,
       // mais restent consultables dans l'onglet dédié de la liste.
       if(getErreur(s)) return;
+      if(!signalVisibility[signalCategoryFor(s)]) return;
       var m = L.marker([s.lat, s.lon], { icon: signalIcon(s) });
       m.on('click', function(){ openSignalQuickEdit(s.id); });
       m.addTo(signalMarkersLayer);
@@ -2500,6 +2545,7 @@
 
   function renderCitizenMarkers(){
     citizenMarkersLayer.clearLayers();
+    if(!signalVisibility.citoyen) return;
     citizenReports.forEach(function(r){
       if(r.status !== 'nouveau') return; // déjà validé ou rejeté : plus besoin de le montrer
       var m = L.marker([r.lat, r.lon], { icon: citizenIcon() });
@@ -3277,6 +3323,22 @@
   });
   document.getElementById('chkRoadsPath').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerPath); } else { map.removeLayer(roadsLayerPath); }
+  });
+
+  [
+    ['chkSigATraiter', 'a_traiter'],
+    ['chkSigTraite', 'traite'],
+    ['chkSigDoublon', 'doublon'],
+    ['chkSigPasAmbroisie', 'pas_ambroisie'],
+    ['chkSigDeptNonEnvoye', 'dept_non_envoye'],
+    ['chkSigDeptEnvoye', 'dept_envoye'],
+    ['chkSigCitoyen', 'citoyen']
+  ].forEach(function(pair){
+    document.getElementById(pair[0]).addEventListener('change', function(e){
+      signalVisibility[pair[1]] = e.target.checked;
+      renderSignalMarkers();
+      renderCitizenMarkers();
+    });
   });
 
   document.getElementById('btnReloadRoads').addEventListener('click', function(){
