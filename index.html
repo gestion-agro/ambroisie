@@ -207,12 +207,12 @@
   }
 
   /* ---- report modal ---- */
-  #reportModal, #listModal, #accountModal, #quickEditModal, #aboutModal{
+  #reportModal, #listModal, #accountModal, #quickEditModal, #aboutModal, #auditLogModal, #roadCoverageModal{
     position:fixed;inset:0;z-index:2500;
     background:rgba(20,25,20,.55);
     display:flex;align-items:flex-end;justify-content:center;
   }
-  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden, #aboutModal.hidden{display:none;}
+  #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden, #aboutModal.hidden, #auditLogModal.hidden, #roadCoverageModal.hidden{display:none;}
   #customModalOverlay{
     position:fixed;inset:0;z-index:4000;
     background:rgba(20,25,20,.65);
@@ -309,6 +309,17 @@
     box-shadow:2px 3px 0 rgba(0,0,0,.2);
     cursor:pointer;
   }
+  #btnRoadCoverage{
+    position:fixed;left:14px;bottom:202px;z-index:1001;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:44px;height:44px;
+    font-size:18px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
   #listBadge{
     position:absolute;top:-4px;right:-4px;
     background:var(--danger);color:#fff;
@@ -374,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-29-u</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-a</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -403,6 +414,7 @@
 </div>
 
 <button id="btnListToggle" title="Liste des signalements">☰<span id="listBadge">0</span></button>
+<button id="btnRoadCoverage" title="Suivi des routes parcourues">🛣️</button>
 <button id="btnReport" title="Signaler ambroisie">🌿</button>
 <button id="btnPlacePin" title="Signaler à un endroit précis sur la carte">📍</button>
 
@@ -564,6 +576,16 @@
         <button class="btn" id="btnExportJSON" style="width:100%;">💾 Télécharger une sauvegarde complète (JSON)</button>
       </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Journal des événements</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Connexions, créations/suppressions de comptes, écritures de signalements.</p>
+        <button class="btn" id="btnShowAuditLog" style="width:100%;">📜 Voir le journal d'accès</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;color:var(--danger);">⚠️ Réinitialiser les tracés de tous les conseillers</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface l'historique de trajet de TOUS les conseillers (utile pour repartir de zéro à chaque nouvelle campagne).</p>
+        <button class="btn" id="btnResetAllTracks" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Réinitialiser tous les tracés</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;">Sécurité</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
           Journal des connexions et modifications récentes (200 dernières entrées).
@@ -599,6 +621,33 @@
     <p style="font-size:12px;color:var(--muted);">Version affichée en haut de l'écran (ex: v2026-07-29-f).</p>
     <div class="sheet-actions">
       <button class="btn" id="btnCloseAbout" style="width:100%;">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div id="auditLogModal" class="hidden">
+  <div class="sheet">
+    <div class="sheet-header">
+      <h3>Journal d'accès</h3>
+      <button class="sheet-close-x" id="btnCloseAuditLogX" title="Fermer">✕</button>
+    </div>
+    <div id="auditLogContent"><p style="color:var(--muted);font-size:13px;">Chargement…</p></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseAuditLog" style="width:100%;">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div id="roadCoverageModal" class="hidden">
+  <div class="sheet">
+    <div class="sheet-header">
+      <h3>🛣️ Suivi des routes (<span id="roadCoverageCount">0 / 0</span>)</h3>
+      <button class="sheet-close-x" id="btnCloseRoadCoverageX" title="Fermer">✕</button>
+    </div>
+    <input type="text" id="roadCoverageSearch" placeholder="🔎 Rechercher une route..." style="width:100%;font-size:14px;padding:9px 10px;border:2px solid #ccc;border-radius:8px;margin-bottom:12px;">
+    <div id="roadCoverageContent"><p style="color:var(--muted);font-size:13px;">Chargement…</p></div>
+    <div class="sheet-actions">
+      <button class="btn" id="btnCloseRoadCoverage" style="width:100%;">Fermer</button>
     </div>
   </div>
 </div>
@@ -672,17 +721,27 @@
   var otherTracksLayer = L.layerGroup().addTo(map);
   var userMarker = null;
   var accuracyCircle = null;
-  var trackCoords = [];
-  var trackPolyline = null;
   var following = false; // le suivi (enregistrement + centrage) doit être activé manuellement par le conseiller
   var lastFix = null;
 
-  // Trace partagée : version simplifiée envoyée aux autres conseillers
-  var sharedTrackPoints = [];
+  // ---- Tracé en segments ----
+  // Le trajet est stocké comme une LISTE DE TRONÇONS (segments), pas une seule
+  // ligne continue. Un nouveau tronçon démarre à chaque fois qu'il y a une
+  // interruption significative (téléphone en veille, suivi coupé puis relancé,
+  // saut de position improbable) — ça évite le trait droit qui traversait
+  // tout l'écran entre la position d'avant la veille et celle d'après.
+  var trackSegments = [[]];         // affichage local complet (ce conseiller, cette session)
+  var sharedTrackSegments = [[]];   // version envoyée aux autres (points espacés, mêmes coupures)
+  var lastSyncedSegmentsJSON = JSON.stringify([[]]);
+  var lastFixTimestamp = null;
   var lastSharedPoint = null;
-  var lastSyncedPointCount = 0;
-  var SHARE_MIN_DISTANCE = 15; // mètres — n'envoie un nouveau point que si on a bougé d'au moins cette distance
-  var TRACK_SYNC_INTERVAL = 45000; // 45s
+  var trackPolyline = null;
+
+  var SHARE_MIN_DISTANCE = 15;        // mètres — n'envoie un nouveau point que si on a bougé d'au moins cette distance
+  var TRACK_SYNC_INTERVAL = 45000;    // 45s
+  var GPS_ACCURACY_LIMIT = 50;        // mètres — au-delà, le point n'est pas enregistré dans le tracé
+  var TRACK_GAP_TIME_MS = 90 * 1000;  // au-delà de 90s sans nouveau point : on considère une interruption
+  var TRACK_GAP_DISTANCE_M = 250;     // saut de plus de 250m d'un coup : probablement une interruption aussi
 
   function haversineMeters(lat1, lon1, lat2, lon2){
     var R = 6371000;
@@ -731,6 +790,96 @@
   // Boîte englobante de secours, utilisée uniquement si la requête par
   // contour administratif échoue ou ne renvoie rien (ex: tag manquant dans OSM).
   var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
+
+  // ================= SUIVI DE COUVERTURE DES ROUTES =================
+  function roadCoverageApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/road-coverage'); }
+  var roadCoverageSha = null;
+
+  function loadRoadCoverage(){
+    return fetch(roadCoverageApiUrl(), { method: 'GET', headers: authHeaders() })
+      .then(handleAuthResponse)
+      .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(data){
+        roadCoverageSha = data.sha || null;
+        roadCoverage = {};
+        (data.items || []).forEach(function(item){ roadCoverage[item.key] = { by: item.by, at: item.at }; });
+        applyRoadCoverageStyling();
+      })
+      .catch(function(e){ console.warn('Erreur chargement couverture des routes', e); });
+  }
+
+  function saveRoadCoverage(){
+    var items = Object.keys(roadCoverage).map(function(key){
+      return { key: key, by: roadCoverage[key].by, at: roadCoverage[key].at };
+    });
+    return fetch(roadCoverageApiUrl(), {
+      method: 'PUT',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ items: items, sha: roadCoverageSha })
+    })
+    .then(handleAuthResponse)
+    .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){ roadCoverageSha = data.sha; });
+  }
+
+  function toggleRoadCoverage(key){
+    if(roadCoverage[key]){
+      delete roadCoverage[key];
+    } else {
+      roadCoverage[key] = { by: getUserFullName(currentUser), at: new Date().toISOString() };
+    }
+    applyRoadCoverageStyling();
+    saveRoadCoverage().catch(function(){ /* déjà appliqué visuellement, on retentera au prochain chargement */ });
+  }
+
+  function renderRoadCoverageList(filterText){
+    var box = document.getElementById('roadCoverageContent');
+    var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; });
+    entries.sort(function(a,b){ return a.label.localeCompare(b.label, 'fr'); });
+    if(filterText){
+      var q = filterText.toLowerCase();
+      entries = entries.filter(function(e){ return e.label.toLowerCase().indexOf(q) !== -1; });
+    }
+    var doneCount = entries.filter(function(e){ return isRoadCovered(e.key); }).length;
+    document.getElementById('roadCoverageCount').textContent = doneCount + ' / ' + entries.length + ' parcourues';
+
+    if(entries.length === 0){
+      box.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucune route ne correspond.</p>';
+      return;
+    }
+
+    box.innerHTML = entries.map(function(e){
+      var covered = isRoadCovered(e.key);
+      var info = roadCoverage[e.key];
+      var classLabel = e.roadClass === 'RD' ? 'RD' : (e.roadClass === 'RN' ? 'RN' : 'RC');
+      return '<div class="citizen-row">' +
+        '<span class="status-pill' + (covered ? ' done' : '') + '">' + (covered ? 'Parcourue' : 'Non parcourue') + '</span> ' +
+        '<span class="status-pill">' + classLabel + '</span>' +
+        '<div class="meta" style="margin-top:6px;"><b>' + escapeHtml(e.label) + '</b></div>' +
+        (covered && info ? '<div class="meta" style="font-style:italic;">Par ' + escapeHtml(info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') + '</div>' : '') +
+        '<div class="row-actions">' +
+          '<button class="btn" data-gotoroad="' + e.key + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
+          '<button class="btn' + (covered ? '' : ' primary') + '" data-toggleroad="' + e.key.replace(/"/g,'&quot;') + '" style="flex:1;padding:8px;font-size:11px;">' + (covered ? 'Remettre non parcourue' : 'Marquer parcourue') + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    box.querySelectorAll('[data-toggleroad]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        toggleRoadCoverage(btn.getAttribute('data-toggleroad'));
+        renderRoadCoverageList(document.getElementById('roadCoverageSearch').value.trim());
+      });
+    });
+    box.querySelectorAll('[data-gotoroad]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var entry = roadsIndex[btn.getAttribute('data-gotoroad')];
+        if(entry && entry.polylines[0]){
+          document.getElementById('roadCoverageModal').classList.add('hidden');
+          map.fitBounds(entry.polylines[0].getBounds(), { padding:[40,40] });
+        }
+      });
+    });
+  }
 
   function loadCommuneRoads(){
     var staleCache = null;
@@ -1017,12 +1166,41 @@
   var roadBounds = null;
   var hasCenteredOnce = false;
 
+  // ---- Index des routes pour le suivi de couverture ----
+  // Regroupées par nom (une route peut être coupée en plusieurs tronçons OSM),
+  // avec repli sur l'identifiant OSM pour les voies sans nom.
+  var roadsIndex = {}; // clé -> { key, label, roadClass, polylines: [...] }
+  var roadCoverage = {}; // clé -> { by, at }
+
+  function roadKeyFor(tags, elId, roadClass){
+    if(tags.name) return roadClass + '::' + tags.name;
+    if(tags.ref) return roadClass + '::' + tags.ref;
+    return roadClass + '::way' + elId;
+  }
+
+  function isRoadCovered(key){ return !!roadCoverage[key]; }
+
+  function applyRoadCoverageStyling(){
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      var covered = isRoadCovered(key);
+      entry.polylines.forEach(function(line){
+        if(covered){
+          line.setStyle({ color:'#9a9a9a', opacity:0.5, dashArray:'3 5' });
+        } else {
+          line.setStyle(entry.baseStyle);
+        }
+      });
+    });
+  }
+
   function drawRoads(osmData){
     if(!osmData.elements || osmData.elements.length === 0){
       showLoadError('Aucune route trouvée autour de Belsentes dans OpenStreetMap pour le moment.');
       return;
     }
     var bounds = [];
+    roadsIndex = {};
     osmData.elements.forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
@@ -1036,7 +1214,14 @@
       var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : roadsLayerRC);
       line.addTo(targetLayer);
       latlngs.forEach(function(p){ bounds.push(p); });
+
+      var key = roadKeyFor(tags, el.id, roadClass);
+      if(!roadsIndex[key]){
+        roadsIndex[key] = { key: key, label: label, roadClass: roadClass, polylines: [], baseStyle: style };
+      }
+      roadsIndex[key].polylines.push(line);
     });
+    applyRoadCoverageStyling();
     if(bounds.length){
       roadBounds = L.latLngBounds(bounds);
       if(!hasCenteredOnce){
@@ -1076,20 +1261,46 @@
       accuracyCircle.setRadius(acc);
     }
 
-    // trace parcourue (affichage local, tous les points) — uniquement si le
-    // conseiller a explicitement activé le suivi (jamais automatique à l'ouverture).
+    // trace parcourue (affichage local) — uniquement si le conseiller a
+    // explicitement activé le suivi (jamais automatique à l'ouverture), ET
+    // uniquement si la position est assez précise (sinon on fausserait le
+    // tracé sans que ça reflète un vrai déplacement à pied).
     if(following){
-      trackCoords.push([lat, lon]);
-      if(!trackPolyline){
-        trackPolyline = L.polyline(trackCoords, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
+      if(acc > GPS_ACCURACY_LIMIT){
+        setStatus('wait', 'Suivi en pause · précision insuffisante (' + Math.round(acc) + ' m > ' + GPS_ACCURACY_LIMIT + ' m)');
       } else {
-        trackPolyline.setLatLngs(trackCoords);
-      }
+        var now = Date.now();
+        var lastSeg = trackSegments[trackSegments.length - 1];
+        var lastPt = lastSeg.length ? lastSeg[lastSeg.length - 1] : null;
+        var isGap = false;
+        if(lastPt && lastFixTimestamp){
+          var elapsed = now - lastFixTimestamp;
+          var dist = haversineMeters(lastPt[0], lastPt[1], lat, lon);
+          if(elapsed > TRACK_GAP_TIME_MS || dist > TRACK_GAP_DISTANCE_M) isGap = true;
+        }
+        if(isGap){
+          // Interruption détectée (veille, suivi coupé/relancé...) : on démarre
+          // un nouveau tronçon plutôt que de tracer un trait à travers la coupure.
+          trackSegments.push([]);
+          sharedTrackSegments.push([]);
+          lastSharedPoint = null;
+          lastSeg = trackSegments[trackSegments.length - 1];
+        }
+        lastSeg.push([lat, lon]);
+        lastFixTimestamp = now;
 
-      // trace partagée (envoyée aux autres conseillers, simplifiée par distance)
-      if(!lastSharedPoint || haversineMeters(lastSharedPoint[0], lastSharedPoint[1], lat, lon) > SHARE_MIN_DISTANCE){
-        sharedTrackPoints.push([lat, lon]);
-        lastSharedPoint = [lat, lon];
+        if(!trackPolyline){
+          trackPolyline = L.polyline(trackSegments, { color:'#c8501f', weight:5, opacity:0.9 }).addTo(trackLayer);
+        } else {
+          trackPolyline.setLatLngs(trackSegments);
+        }
+
+        // trace partagée (envoyée aux autres conseillers, simplifiée par distance)
+        var lastSharedSeg = sharedTrackSegments[sharedTrackSegments.length - 1];
+        if(!lastSharedPoint || haversineMeters(lastSharedPoint[0], lastSharedPoint[1], lat, lon) > SHARE_MIN_DISTANCE){
+          lastSharedSeg.push([lat, lon]);
+          lastSharedPoint = [lat, lon];
+        }
       }
 
       // Si le GPS renvoie une position aberrante (hors zone utile, ex: PC sans
@@ -1170,9 +1381,11 @@
     if(following){ following = false; updateFollowBtn(); }
   });
 
-  document.getElementById('btnClear').addEventListener('click', function(){
-    if(confirm('Effacer la trace du trajet parcouru ?')){
-      trackCoords = [];
+  document.getElementById('btnClear').addEventListener('click', async function(){
+    var ok = await customConfirm('Effacer la trace du trajet parcouru ?', 'Effacer la trace');
+    if(ok){
+      trackSegments = [[]];
+      lastFixTimestamp = null;
       if(trackPolyline){ trackLayer.clearLayers(); trackPolyline = null; }
     }
   });
@@ -1245,26 +1458,40 @@
 
       var mine = tracks.find(function(t){ return t.username === currentUser; });
 
+      // Convertit un ancien format "liste plate de points" en un seul segment,
+      // pour rester compatible avec les tracés enregistrés avant ce changement.
+      function toSegments(points){
+        if(!points || points.length === 0) return [[]];
+        if(Array.isArray(points[0]) && Array.isArray(points[0][0])) return points; // déjà en segments
+        return [points]; // ancien format à plat : un seul segment
+      }
+
+      var myPointCount = sharedTrackSegments.reduce(function(n, seg){ return n + seg.length; }, 0);
+
       // Si le serveur a déjà plus de points que ce qu'on a en mémoire (nouvelle
       // session, ou suivi déjà démarré depuis un autre appareil), on reprend
       // cet historique comme base au lieu de repartir de zéro — c'est ce qui
       // garantit que les trajets s'accumulent dans le temps sans jamais être
       // écrasés par une session vide.
-      if(mine && mine.points && mine.points.length > sharedTrackPoints.length){
-        sharedTrackPoints = mine.points.slice();
-        lastSyncedPointCount = sharedTrackPoints.length;
-        if(sharedTrackPoints.length){
-          lastSharedPoint = sharedTrackPoints[sharedTrackPoints.length - 1];
+      if(mine && mine.points){
+        var serverSegments = toSegments(mine.points);
+        var serverPointCount = serverSegments.reduce(function(n, seg){ return n + seg.length; }, 0);
+        if(serverPointCount > myPointCount){
+          sharedTrackSegments = serverSegments;
+          lastSyncedSegmentsJSON = JSON.stringify(sharedTrackSegments);
+          var lastSeg = sharedTrackSegments[sharedTrackSegments.length - 1];
+          lastSharedPoint = lastSeg.length ? lastSeg[lastSeg.length - 1] : null;
         }
       }
 
       // Si on a de nouveaux points à partager (au-delà de ce qui est déjà connu), on met à jour notre entrée
-      if(sharedTrackPoints.length > lastSyncedPointCount){
+      var currentJSON = JSON.stringify(sharedTrackSegments);
+      if(currentJSON !== lastSyncedSegmentsJSON){
         if(mine){
-          mine.points = sharedTrackPoints;
+          mine.points = sharedTrackSegments;
           mine.updatedAt = new Date().toISOString();
         } else {
-          tracks.push({ username: currentUser, points: sharedTrackPoints.slice(), updatedAt: new Date().toISOString() });
+          tracks.push({ username: currentUser, points: sharedTrackSegments.slice(), updatedAt: new Date().toISOString() });
         }
         var putResp = await fetch(tracksApiUrl(), {
           method: 'PUT',
@@ -1272,7 +1499,7 @@
           body: JSON.stringify({ items: tracks, sha: sha })
         });
         if(putResp.ok){
-          lastSyncedPointCount = sharedTrackPoints.length;
+          lastSyncedSegmentsJSON = currentJSON;
         }
       }
 
@@ -1289,7 +1516,10 @@
     var idx = 0;
     tracks.forEach(function(t){
       if(t.username === currentUser) return;
-      if(!t.points || t.points.length < 2) return;
+      if(!t.points || t.points.length === 0) return;
+      // Un tracé peut être soit une liste plate de points (ancien format),
+      // soit une liste de tronçons (nouveau format) : Leaflet gère les deux
+      // nativement via L.polyline, donc pas de conversion nécessaire ici.
       var color = TRACK_COLORS[idx % TRACK_COLORS.length];
       idx++;
       var line = L.polyline(t.points, { color: color, weight: 4, opacity: 0.65, dashArray: '6 6' });
@@ -1652,6 +1882,7 @@
     startTrackSync();
     startSignalSync();
     startCitizenSync();
+    loadRoadCoverage();
   }
 
   document.getElementById('btnAccount').addEventListener('click', function(){
@@ -1872,6 +2103,103 @@
     };
     var dateStr = new Date().toISOString().slice(0,10);
     downloadFile('sauvegarde-ambroisie-belsentes-' + dateStr + '.json', JSON.stringify(backup, null, 2), 'application/json');
+  });
+
+  // ================= JOURNAL D'ACCÈS =================
+  function auditLogApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/audit-log'); }
+
+  var EVENT_LABELS = {
+    login_success: '✅ Connexion réussie',
+    login_failed: '❌ Échec de connexion',
+    bootstrap_admin_created: '👑 Premier compte admin créé',
+    user_created: '➕ Utilisateur créé',
+    user_deleted: '➖ Utilisateur supprimé',
+    password_changed: '🔑 Mot de passe changé',
+    signalements_write: '💾 Signalements modifiés'
+  };
+
+  document.getElementById('btnShowAuditLog').addEventListener('click', async function(){
+    document.getElementById('auditLogContent').innerHTML = '<p style="color:var(--muted);font-size:13px;">Chargement…</p>';
+    document.getElementById('auditLogModal').classList.remove('hidden');
+    try{
+      var resp = await fetch(auditLogApiUrl(), { method: 'GET', headers: authHeaders() });
+      handleAuthResponse(resp);
+      var data = await resp.json();
+      if(!resp.ok) throw new Error(data.error || 'Erreur');
+      var items = data.items || [];
+      if(items.length === 0){
+        document.getElementById('auditLogContent').innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun événement enregistré pour l\'instant.</p>';
+        return;
+      }
+      document.getElementById('auditLogContent').innerHTML = items.map(function(ev){
+        var label = EVENT_LABELS[ev.type] || ev.type;
+        var who = ev.username || ev.by || '';
+        var extra = (ev.by && ev.username && ev.by !== ev.username) ? ' (par ' + escapeHtml(ev.by) + ')' : '';
+        return '<div class="citizen-row">' +
+          '<div class="meta">' + label + '</div>' +
+          '<div class="meta">' + escapeHtml(who) + extra + '</div>' +
+          '<div class="meta">' + (ev.at ? new Date(ev.at).toLocaleString('fr-FR') : '—') + '</div>' +
+        '</div>';
+      }).join('');
+    } catch(e){
+      document.getElementById('auditLogContent').innerHTML = '<p style="color:var(--danger);font-size:13px;">Erreur lors du chargement du journal.</p>';
+    }
+  });
+  document.getElementById('btnCloseAuditLog').addEventListener('click', function(){
+    document.getElementById('auditLogModal').classList.add('hidden');
+  });
+  document.getElementById('btnCloseAuditLogX').addEventListener('click', function(){
+    document.getElementById('auditLogModal').classList.add('hidden');
+  });
+
+  // ================= PAGE "SUIVI DES ROUTES" =================
+  document.getElementById('btnRoadCoverage').addEventListener('click', async function(){
+    document.getElementById('roadCoverageModal').classList.remove('hidden');
+    document.getElementById('roadCoverageContent').innerHTML = '<p style="color:var(--muted);font-size:13px;">Chargement…</p>';
+    await loadRoadCoverage();
+    renderRoadCoverageList('');
+  });
+  document.getElementById('btnCloseRoadCoverage').addEventListener('click', function(){
+    document.getElementById('roadCoverageModal').classList.add('hidden');
+  });
+  document.getElementById('btnCloseRoadCoverageX').addEventListener('click', function(){
+    document.getElementById('roadCoverageModal').classList.add('hidden');
+  });
+  document.getElementById('roadCoverageSearch').addEventListener('input', function(){
+    renderRoadCoverageList(this.value.trim());
+  });
+
+  // ================= RÉINITIALISATION GLOBALE DES TRACÉS =================
+  document.getElementById('btnResetAllTracks').addEventListener('click', async function(){
+    var ok = await customConfirm(
+      'Ceci va effacer DÉFINITIVEMENT l\'historique de trajet de TOUS les conseillers (pas seulement le vôtre). Continuer ?',
+      'Réinitialiser tous les tracés'
+    );
+    if(!ok) return;
+    var btn = document.getElementById('btnResetAllTracks');
+    btn.disabled = true;
+    btn.textContent = 'Réinitialisation…';
+    try{
+      var resp = await fetch(tracksApiUrl(), {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: [], sha: null })
+      });
+      handleAuthResponse(resp);
+      if(!resp.ok) throw new Error('Erreur');
+      // On efface aussi l'affichage local immédiatement
+      trackSegments = [[]];
+      sharedTrackSegments = [[]];
+      lastSyncedSegmentsJSON = JSON.stringify([[]]);
+      trackLayer.clearLayers();
+      otherTracksLayer.clearLayers();
+      await customAlert('Les tracés de tous les conseillers ont été réinitialisés.');
+    } catch(e){
+      await customAlert('Erreur lors de la réinitialisation.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Réinitialiser tous les tracés';
+    }
   });
 
   document.getElementById('btnShowAbout').addEventListener('click', function(){
@@ -2874,7 +3202,7 @@
   // Fermer en touchant en dehors du panneau (sur le fond assombri), pratique
   // quand la liste est longue et qu'on ne veut pas tout redescendre pour
   // atteindre le bouton "Fermer".
-  ['listModal', 'quickEditModal', 'accountModal', 'aboutModal'].forEach(function(id){
+  ['listModal', 'quickEditModal', 'accountModal', 'aboutModal', 'auditLogModal', 'roadCoverageModal'].forEach(function(id){
     var modalEl = document.getElementById(id);
     modalEl.addEventListener('click', function(e){
       if(e.target === modalEl){
