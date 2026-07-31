@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-b</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-c</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -398,6 +398,7 @@
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsPath" style="margin:0;"> <span class="sw" style="background:#a8a8a8"></span> Chemins de terre/privés (indicatif)</label></div>
     <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
     <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
     <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
@@ -717,6 +718,7 @@
   var roadsLayerRC = L.layerGroup().addTo(map);
   var roadsLayerRD = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var roadsLayerRN = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
+  var roadsLayerPath = L.layerGroup(); // chemins de terre/privés, indicatif seulement, désactivé par défaut
   var trackLayer = L.layerGroup().addTo(map);
   var otherTracksLayer = L.layerGroup().addTo(map);
   var userMarker = null;
@@ -918,7 +920,7 @@
           if(isPrecise){
             // Cache déjà précis et récent : simple rafraîchissement discret en arrière-plan
             loadRoadsData(function(data, precision){
-              roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
+              roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers(); roadsLayerPath.clearLayers();
               drawRoads(data);
               saveCache(data, precision);
             }, function(){ /* échec silencieux, on garde le cache précis existant */ });
@@ -953,7 +955,7 @@
 
     loadRoadsData(function(data, precision){
       clearTimeout(skipTimer);
-      roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
+      roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers(); roadsLayerPath.clearLayers();
       drawRoads(data);
       saveCache(data, precision);
       hideLoading();
@@ -1158,6 +1160,10 @@
     if(/^D\s?\d/i.test(ref)) return 'RD';
     if(/^N\s?\d/i.test(ref)) return 'RN';
     if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    // Chemins de terre / d'exploitation, chemins équestres, souvent en terrain
+    // privé, non praticables ou peu praticables en voiture, et hors ressort de
+    // la mairie pour l'arrachage : on les met à part, pas avec les vraies routes.
+    if(tags.highway === 'track' || tags.highway === 'bridleway') return 'PATH';
     return 'RC';
   }
 
@@ -1170,14 +1176,15 @@
     } else if(roadClass === 'RN'){
       color = '#8a3fbf'; // violet : nationale
       w = 6;
+    } else if(roadClass === 'PATH'){
+      color = '#a8a8a8'; // gris clair : chemin de terre/privé, indicatif seulement
+      w = 2; dash = '1 6';
     } else {
       // Style RC selon le type de voie
       if(highwayType === 'unclassified' || highwayType === 'residential'){
         w = 4;
       } else if(highwayType === 'tertiary' || highwayType === 'secondary' || highwayType === 'primary'){
         w = 5;
-      } else if(highwayType === 'track'){
-        w = 3; dash = '2 6';
       } else if(highwayType === 'service'){
         w = 3; dash = '1 5';
       }
@@ -1231,9 +1238,17 @@
       var style = roadStyle(tags.highway, roadClass);
       var line = L.polyline(latlngs, style);
       var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
-      var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : roadsLayerRC);
+      var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
       line.addTo(targetLayer);
       latlngs.forEach(function(p){ bounds.push(p); });
+
+      // Les chemins de terre/privés (PATH) sont indicatifs seulement : on ne
+      // les inclut pas dans le suivi de couverture des routes, qui ne
+      // concerne que les vraies voies (RC/RD/RN) relevant de l'arrachage.
+      if(roadClass === 'PATH'){
+        line.bindPopup('<b>' + label + '</b><br>Chemin de terre / privé — indicatif, hors suivi');
+        return;
+      }
 
       var key = roadKeyFor(tags, el.id, roadClass);
       if(!roadsIndex[key]){
@@ -3260,13 +3275,16 @@
   document.getElementById('chkRoadsRN').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerRN); } else { map.removeLayer(roadsLayerRN); }
   });
+  document.getElementById('chkRoadsPath').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerPath); } else { map.removeLayer(roadsLayerPath); }
+  });
 
   document.getElementById('btnReloadRoads').addEventListener('click', function(){
     var btn = document.getElementById('btnReloadRoads');
     btn.disabled = true;
     btn.textContent = 'Chargement…';
     loadRoadsData(function(data, precision){
-      roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers();
+      roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers(); roadsLayerPath.clearLayers();
       drawRoads(data);
       saveCache(data, precision);
       btn.disabled = false;
