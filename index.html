@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-j</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-k</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -660,8 +660,9 @@
 
 <div id="controls">
   <button class="btn locate" id="btnCenter" title="Centrer sur ma position">◎</button>
-  <button class="btn" id="btnFollow">Suivi coupé</button>
-  <button class="btn" id="btnClear">Effacer trace</button>
+  <!-- Suivi du trajet désactivé pour l'instant (garde le point GPS + recentrage) -->
+  <button class="btn" id="btnFollow" style="display:none;">Suivi coupé</button>
+  <button class="btn" id="btnClear" style="display:none;">Effacer trace</button>
 </div>
 
 <div id="loading">
@@ -1425,8 +1426,8 @@
   document.getElementById('btnCenter').addEventListener('click', function(){
     if(lastFix && MAP_BOUNDS.contains(lastFix)){
       map.setView(lastFix, 17, { animate:true });
-      following = true;
-      updateFollowBtn();
+      // Recentrage ponctuel uniquement : n'active plus le suivi continu du
+      // trajet (désactivé pour l'instant), juste un recentrage immédiat.
     } else if(roadBounds){
       map.fitBounds(roadBounds, { padding:[30,30] });
     } else {
