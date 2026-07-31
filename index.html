@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-h</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-i</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -3179,6 +3179,12 @@
     wireSignalRowButtons(box, 'quickEditModal');
   }
 
+  // Normalise un texte pour la recherche : minuscules + accents retirés
+  // (ex: "Traité" et "TRAITE" et "traite" deviennent tous "traite").
+  function normalizeSearchText(str){
+    return String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
   var showSMList = true;
   var showDashboard = false;
 
@@ -3246,13 +3252,15 @@
     if(listClassifFilter){
       visible = visible.filter(function(s){ return getClassification(s) === listClassifFilter; });
     }
-    // Recherche texte (nom du conseiller/citoyen, numéro SM, numéro AMB d'origine)
+    // Recherche texte (nom du conseiller/citoyen, numéro SM, numéro AMB d'origine, note)
+    // — insensible à la casse ET aux accents (ex: "traite" trouve aussi "traité").
     if(listSearchQuery){
-      var q = listSearchQuery.toLowerCase();
+      var q = normalizeSearchText(listSearchQuery);
       visible = visible.filter(function(s){
-        return (s.name || '').toLowerCase().indexOf(q) !== -1 ||
-               (s.refNumber || '').toLowerCase().indexOf(q) !== -1 ||
-               (s.fromCitizenRefNumber || '').toLowerCase().indexOf(q) !== -1;
+        return normalizeSearchText(s.name || '').indexOf(q) !== -1 ||
+               normalizeSearchText(s.refNumber || '').indexOf(q) !== -1 ||
+               normalizeSearchText(s.fromCitizenRefNumber || '').indexOf(q) !== -1 ||
+               normalizeSearchText(s.note || '').indexOf(q) !== -1;
       });
     }
 
