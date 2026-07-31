@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-i</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-j</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1843,7 +1843,7 @@
         // Ouvre directement la fiche du nouveau signalement officiel créé,
         // pour permettre au conseiller de compléter/vérifier tout de suite.
         following = false; updateFollowBtn();
-        map.setView([entry.lat, entry.lon], 17, { animate:true });
+        centerMapAboveModal(entry.lat, entry.lon, 17);
         openSignalQuickEdit(entry.id);
       });
     });
@@ -2560,6 +2560,16 @@
   }
   signalMarkersLayer.addTo(map);
 
+  // Centre la carte sur un point, mais décalé vers le haut de l'écran plutôt
+  // qu'au centre exact — utile quand une fenêtre (comme "Modifier") va rester
+  // ouverte par-dessus la moitié basse de l'écran, pour que le point reste visible.
+  function centerMapAboveModal(lat, lon, zoom){
+    map.setView([lat, lon], zoom || map.getZoom(), { animate:true });
+    setTimeout(function(){
+      map.panBy([0, 130], { animate:true });
+    }, 300);
+  }
+
   function openSignalQuickEdit(id){
     refreshQuickEdit(id);
     document.getElementById('quickEditModal').classList.remove('hidden');
@@ -2994,7 +3004,7 @@
         document.getElementById('listModal').classList.add('hidden');
         if(s){
           following = false; updateFollowBtn();
-          map.setView([s.lat, s.lon], 17, { animate:true });
+          centerMapAboveModal(s.lat, s.lon, 17);
         }
         openSignalQuickEdit(id);
       });
