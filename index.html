@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-g</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -411,6 +411,10 @@
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptNonEnvoye" checked style="margin:0;"> <span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (pas envoyé)</span> <span id="cntDeptNonEnvoye" style="font-weight:700;">0</span></label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (envoyé)</span> <span id="cntDeptEnvoye" style="font-weight:700;">0</span></label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Citoyen (en attente)</span> <span id="cntCitoyen" style="font-weight:700;">0</span></label></div>
+    <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;align-items:flex-start;">
+      <span class="sw" style="background:repeating-linear-gradient(45deg, #2f6b3a, #2f6b3a 3px, #1c6fd9 3px, #1c6fd9 6px);border-radius:50%;width:10px;height:10px;flex:none;margin-top:2px;"></span>
+      <span style="font-size:11px;line-height:1.3;">Session en cours : créé/modifié depuis l'ouverture, reste visible même si la case est décochée</span>
+    </div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
   </div>
 </div>
@@ -1808,6 +1812,7 @@
           lastModifiedAt: nowIsoTransfer
         };
         signalements.push(entry);
+        markSessionTouched(entry.id);
         r.status = 'valide';
         r.processedBy = getUserFullName(currentUser);
         r.processedAt = new Date().toISOString();
@@ -2488,13 +2493,24 @@
 
   function signalIcon(entry){
     var color = markerColorFor(entry);
+    var touched = !!sessionTouchedIds[entry.id];
+    var html = touched
+      ? '<div class="signal-icon" style="background:repeating-linear-gradient(45deg, ' + color + ', ' + color + ' 4px, #1c6fd9 4px, #1c6fd9 8px);border:2px solid #1c6fd9;"></div>'
+      : '<div class="signal-icon" style="background:' + color + ';"></div>';
     return L.divIcon({
       className: '',
-      html: '<div class="signal-icon" style="background:' + color + ';"></div>',
+      html: html,
       iconSize: [26,26],
       iconAnchor: [13,26]
     });
   }
+
+  // Signalements créés OU modifiés pendant la session en cours (depuis
+  // l'ouverture de l'appli) : ils restent affichés sur la carte même si leur
+  // catégorie est décochée dans la légende, avec un style hachuré distinct —
+  // pour ne pas "perdre" un point qu'on vient juste de traiter.
+  var sessionTouchedIds = {};
+  function markSessionTouched(id){ sessionTouchedIds[id] = true; }
 
   // Catégorie de visibilité d'un signalement (indépendante de sa couleur),
   // utilisée pour le filtrage d'affichage/masquage dans la légende.
@@ -2535,7 +2551,7 @@
       // Les signalements marqués "erreur" (faux positif) sont masqués de la carte,
       // mais restent consultables dans l'onglet dédié de la liste.
       if(getErreur(s)) return;
-      if(!signalVisibility[signalCategoryFor(s)]) return;
+      if(!sessionTouchedIds[s.id] && !signalVisibility[signalCategoryFor(s)]) return;
       var m = L.marker([s.lat, s.lon], { icon: signalIcon(s) });
       m.on('click', function(){ openSignalQuickEdit(s.id); });
       m.addTo(signalMarkersLayer);
@@ -2749,6 +2765,7 @@
       s.lon = e.latlng.lng;
       s.lastModifiedBy = getUserFullName(currentUser);
       s.lastModifiedAt = new Date().toISOString();
+      markSessionTouched(s.id);
       renderSignalMarkers();
       renderList();
       saveSignalements();
@@ -2856,6 +2873,7 @@
       createdAt: nowIso
     };
     signalements.push(entry);
+    markSessionTouched(entry.id);
     renderSignalMarkers();
     renderList();
     document.getElementById('reportModal').classList.add('hidden');
@@ -3003,6 +3021,7 @@
           s.isErreur = getErreur(s);
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
+          markSessionTouched(s.id);
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
@@ -3018,6 +3037,7 @@
           s.quantity = sel.value || null;
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
+          markSessionTouched(s.id);
           renderList();
           if(closeModalId) refreshQuickEdit(id);
           saveSignalements();
@@ -3034,6 +3054,7 @@
           s.isErreur = getErreur(s);
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
+          markSessionTouched(s.id);
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
@@ -3049,6 +3070,7 @@
           s.sentToDept = !getSentToDept(s);
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
+          markSessionTouched(s.id);
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
@@ -3066,6 +3088,7 @@
           s.isErreur = !getErreur(s);
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
+          markSessionTouched(s.id);
           renderSignalMarkers();
           renderList();
           if(closeModalId) refreshQuickEdit(id);
@@ -3082,6 +3105,7 @@
           s.note = textarea.value.trim() || null;
           s.lastModifiedBy = getUserFullName(currentUser);
           s.lastModifiedAt = new Date().toISOString();
+          markSessionTouched(s.id);
           var originalText = btn.textContent;
           btn.textContent = 'Enregistrement…';
           btn.disabled = true;
