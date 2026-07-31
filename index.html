@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-d</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-e</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -404,13 +404,13 @@
     <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
     <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
     <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><b style="font-size:11px;">Signalements :</b></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigATraiter" checked style="margin:0;"> <span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> À traiter</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigTraite" style="margin:0;"> <span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> Traité</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDoublon" style="margin:0;"> <span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> Doublon</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigPasAmbroisie" style="margin:0;"> <span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> Pas d'ambroisie</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDeptNonEnvoye" checked style="margin:0;"> <span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> Département (pas envoyé)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> Département (envoyé)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> Citoyen (en attente)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigATraiter" checked style="margin:0;"> <span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">À traiter</span> <span id="cntATraiter" style="font-weight:700;">0</span></label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigTraite" style="margin:0;"> <span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Traité</span> <span id="cntTraite" style="font-weight:700;">0</span></label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDoublon" style="margin:0;"> <span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Doublon</span> <span id="cntDoublon" style="font-weight:700;">0</span></label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigPasAmbroisie" style="margin:0;"> <span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Pas d'ambroisie</span> <span id="cntPasAmbroisie" style="font-weight:700;">0</span></label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDeptNonEnvoye" checked style="margin:0;"> <span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (pas envoyé)</span> <span id="cntDeptNonEnvoye" style="font-weight:700;">0</span></label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (envoyé)</span> <span id="cntDeptEnvoye" style="font-weight:700;">0</span></label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Citoyen (en attente)</span> <span id="cntCitoyen" style="font-weight:700;">0</span></label></div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
   </div>
 </div>
@@ -2511,6 +2511,24 @@
     return getTraite(entry) ? 'traite' : 'a_traiter';
   }
 
+  function updateSignalLegendCounts(){
+    var counts = { a_traiter: 0, traite: 0, doublon: 0, pas_ambroisie: 0, dept_non_envoye: 0, dept_envoye: 0 };
+    signalements.forEach(function(s){
+      if(getErreur(s)) return;
+      var cat = signalCategoryFor(s);
+      if(counts[cat] !== undefined) counts[cat]++;
+    });
+    var citoyenCount = citizenReports.filter(function(r){ return r.status === 'nouveau'; }).length;
+
+    document.getElementById('cntATraiter').textContent = counts.a_traiter;
+    document.getElementById('cntTraite').textContent = counts.traite;
+    document.getElementById('cntDoublon').textContent = counts.doublon;
+    document.getElementById('cntPasAmbroisie').textContent = counts.pas_ambroisie;
+    document.getElementById('cntDeptNonEnvoye').textContent = counts.dept_non_envoye;
+    document.getElementById('cntDeptEnvoye').textContent = counts.dept_envoye;
+    document.getElementById('cntCitoyen').textContent = citoyenCount;
+  }
+
   function renderSignalMarkers(){
     signalMarkersLayer.clearLayers();
     signalements.forEach(function(s){
@@ -2522,6 +2540,7 @@
       m.on('click', function(){ openSignalQuickEdit(s.id); });
       m.addTo(signalMarkersLayer);
     });
+    updateSignalLegendCounts();
   }
   signalMarkersLayer.addTo(map);
 
@@ -2545,6 +2564,7 @@
 
   function renderCitizenMarkers(){
     citizenMarkersLayer.clearLayers();
+    updateSignalLegendCounts();
     if(!signalVisibility.citoyen) return;
     citizenReports.forEach(function(r){
       if(r.status !== 'nouveau') return; // déjà validé ou rejeté : plus besoin de le montrer
