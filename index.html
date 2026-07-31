@@ -385,7 +385,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-a</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-b</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -832,6 +832,28 @@
     saveRoadCoverage().catch(function(){ /* déjà appliqué visuellement, on retentera au prochain chargement */ });
   }
 
+  // Ouvre une petite boîte de dialogue au clic sur une route de la carte,
+  // pour la marquer parcourue sans avoir à chercher dans la liste complète.
+  function openRoadQuickView(key){
+    var entry = roadsIndex[key];
+    if(!entry) return;
+    var covered = isRoadCovered(key);
+    var info = roadCoverage[key];
+    var classLabel = entry.roadClass === 'RD' ? 'Départementale (RD)' : (entry.roadClass === 'RN' ? 'Nationale (RN)' : 'Communale (RC)');
+    var msg = classLabel + '\nStatut : ' + (covered ? 'Parcourue' : 'Non parcourue') +
+      (covered && info ? '\nPar ' + (info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') : '');
+    showModal({
+      title: entry.label,
+      message: msg,
+      buttons: [
+        { label: 'Fermer', value: 'close' },
+        { label: covered ? 'Remettre non parcourue' : 'Marquer parcourue', value: 'toggle', primary: !covered, danger: covered }
+      ]
+    }).then(function(choice){
+      if(choice === 'toggle') toggleRoadCoverage(key);
+    });
+  }
+
   function renderRoadCoverageList(filterText){
     var box = document.getElementById('roadCoverageContent');
     var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; });
@@ -1209,8 +1231,6 @@
       var style = roadStyle(tags.highway, roadClass);
       var line = L.polyline(latlngs, style);
       var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
-      var classLabel = roadClass === 'RD' ? 'Départementale (RD)' : (roadClass === 'RN' ? 'Nationale (RN)' : 'Communale (RC)');
-      line.bindPopup('<b>' + label + '</b><br>' + classLabel + (tags.ref ? ' — ' + tags.ref : ''));
       var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : roadsLayerRC);
       line.addTo(targetLayer);
       latlngs.forEach(function(p){ bounds.push(p); });
@@ -1220,6 +1240,7 @@
         roadsIndex[key] = { key: key, label: label, roadClass: roadClass, polylines: [], baseStyle: style };
       }
       roadsIndex[key].polylines.push(line);
+      line.on('click', function(){ openRoadQuickView(key); });
     });
     applyRoadCoverageStyling();
     if(bounds.length){
