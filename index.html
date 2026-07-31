@@ -391,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-n</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-o</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -418,7 +418,7 @@
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (envoyé)</span> <span id="cntDeptEnvoye" style="font-weight:700;">0</span></label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Citoyen (en attente)</span> <span id="cntCitoyen" style="font-weight:700;">0</span></label></div>
     <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;">
-      <span class="sw" style="background:#2f6b3a;opacity:0.5;border:2px dashed #2f6b3a;border-radius:50%;width:10px;height:10px;flex:none;"></span>
+      <span class="sw" style="background:repeating-linear-gradient(45deg, #2f6b3a, #2f6b3a 2px, transparent 2px, transparent 4px);border:2px solid #2f6b3a;border-radius:50%;width:10px;height:10px;flex:none;"></span>
       <span style="font-size:11px;">Session en cours</span>
     </div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
@@ -2528,7 +2528,7 @@
     var color = markerColorFor(entry);
     var touched = !!sessionTouchedIds[entry.id];
     var html = touched
-      ? '<div class="signal-icon" style="background:' + color + ';opacity:0.5;border:2px dashed ' + color + ';"></div>'
+      ? '<div class="signal-icon" style="background:repeating-linear-gradient(45deg, ' + color + ', ' + color + ' 4px, transparent 4px, transparent 8px);border:2px solid ' + color + ';"></div>'
       : '<div class="signal-icon" style="background:' + color + ';"></div>';
     return L.divIcon({
       className: '',
