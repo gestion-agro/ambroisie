@@ -385,16 +385,16 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-k</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-l</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
 <div id="legend">
   <div id="legendHeader" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
     <b style="font-size:12px;">Légende</b>
-    <span id="legendToggleIcon" style="font-size:12px;">▾</span>
+    <span id="legendToggleIcon" style="font-size:12px;">▸</span>
   </div>
-  <div id="legendBody">
+  <div id="legendBody" class="collapsed">
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
     <div style="padding-left:22px;"><span class="sw" style="border-top:2px dashed #2f6b3a;background:none;"></span> ↳ parcourue</div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
@@ -2251,10 +2251,18 @@
     btn.disabled = true;
     btn.textContent = 'Réinitialisation…';
     try{
+      // On récupère d'abord le sha actuel du fichier : sans ça, GitHub refuse
+      // l'écriture car il pense qu'on écrase un contenu sans le connaître
+      // (c'était la cause de l'erreur précédente).
+      var getResp = await fetch(tracksApiUrl(), { method: 'GET', headers: authHeaders() });
+      handleAuthResponse(getResp);
+      if(!getResp.ok) throw new Error('Erreur lecture');
+      var currentData = await getResp.json();
+
       var resp = await fetch(tracksApiUrl(), {
         method: 'PUT',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ items: [], sha: null })
+        body: JSON.stringify({ items: [], sha: currentData.sha || null })
       });
       handleAuthResponse(resp);
       if(!resp.ok) throw new Error('Erreur');
