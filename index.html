@@ -391,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-o</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-p</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -2145,16 +2145,44 @@
     return '"' + s + '"';
   }
 
+  // Convertit des coordonnées GPS (WGS84, lat/lon en degrés) vers le système
+  // Lambert-93 (X/Y en mètres) utilisé par FREDON et les outils SIG français.
+  // Formule et constantes officielles IGN (RGF93 / Lambert-93, EPSG:2154).
+  function wgs84ToLambert93(latDeg, lonDeg){
+    var e = 0.0818191910428158;
+    var n = 0.7256077650;
+    var C = 11754255.426;
+    var Xs = 700000;
+    var Ys = 12655612.050;
+    var lon0 = 3 * Math.PI / 180;
+
+    var lat = latDeg * Math.PI / 180;
+    var lon = lonDeg * Math.PI / 180;
+
+    var latIso = Math.log(Math.tan(Math.PI/4 + lat/2) * Math.pow((1 - e*Math.sin(lat)) / (1 + e*Math.sin(lat)), e/2));
+
+    var R = C * Math.exp(-n * latIso);
+    var gamma = n * (lon - lon0);
+
+    return {
+      x: Xs + R * Math.sin(gamma),
+      y: Ys - R * Math.cos(gamma)
+    };
+  }
+
   document.getElementById('btnExportCSV').addEventListener('click', function(){
-    var cols = ['refNumber','date','name','lat','lon','quantity','classification','sentToDept','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
+    var cols = ['refNumber','date','name','lat','lon','X_Lambert93','Y_Lambert93','quantity','classification','sentToDept','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
     var header = cols.join(',');
     var rows = signalements.map(function(s){
+      var lambert = wgs84ToLambert93(s.lat, s.lon);
       return [
         s.refNumber || '',
         s.date ? new Date(s.date).toLocaleString('fr-FR') : '',
         s.name || '',
         s.lat,
         s.lon,
+        lambert.x,
+        lambert.y,
         s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '',
         (CLASSIFICATIONS[getClassification(s)] || {}).label || '',
         getClassification(s) === 'departement' ? (getSentToDept(s) ? 'Oui' : 'Non') : '',
@@ -3004,6 +3032,7 @@
       (isErreur ? ' <span class="status-pill erreur">Signalement erroné</span>' : '') +
       '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + new Date(s.date).toLocaleString('fr-FR') + ' · ' + escapeHtml(s.name || '') + '</div>' +
       '<div class="meta" id="qeCoords-' + s.id + '">' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
+      (function(){ var lb = wgs84ToLambert93(s.lat, s.lon); return '<div class="meta" style="font-size:11px;color:var(--muted);">Lambert-93 (FREDON) : X=' + lb.x.toFixed(2) + ' · Y=' + lb.y.toFixed(2) + '</div>'; })() +
       originLine +
       createdLine +
       lastModLine +
