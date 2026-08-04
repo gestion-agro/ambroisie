@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-zb</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-zc</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -2060,6 +2060,15 @@
     if(map.hasLayer(roadsLayerPath)) map.removeLayer(roadsLayerPath);
     if(!map.hasLayer(roadsLayerRD)) map.addLayer(roadsLayerRD);
 
+    // Important : si une session conseiller a eu lieu avant dans le même
+    // onglet, ces calques peuvent contenir des signalements normaux
+    // modifiables — on les retire complètement pour garantir que seuls les
+    // signalements "Département" (SD) sont visibles en mode ARS.
+    if(map.hasLayer(signalMarkersLayer)) map.removeLayer(signalMarkersLayer);
+    if(map.hasLayer(citizenMarkersLayer)) map.removeLayer(citizenMarkersLayer);
+    if(map.hasLayer(trackLayer)) map.removeLayer(trackLayer);
+    if(map.hasLayer(otherTracksLayer)) map.removeLayer(otherTracksLayer);
+
     loadArsData();
   }
 
@@ -2077,6 +2086,12 @@
     map.removeLayer(arsMarkersLayer);
     map.removeLayer(roadsLayerRD);
     map.addLayer(roadsLayerRC);
+    // On remet ces calques en place (même vides pour l'instant) pour qu'une
+    // connexion normale juste après continue de fonctionner correctement.
+    if(!map.hasLayer(signalMarkersLayer)) map.addLayer(signalMarkersLayer);
+    if(!map.hasLayer(citizenMarkersLayer)) map.addLayer(citizenMarkersLayer);
+    if(!map.hasLayer(trackLayer)) map.addLayer(trackLayer);
+    if(!map.hasLayer(otherTracksLayer)) map.addLayer(otherTracksLayer);
     document.getElementById('loginScreen').classList.remove('hidden');
   }
 
