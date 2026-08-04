@@ -391,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-p</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-q</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1899,21 +1899,37 @@
     });
   }
 
+  var loginInProgress = false;
+
   async function tryLogin(){
+    if(loginInProgress) return; // évite un double envoi (double clic, Entrée + clic simultanés)
     var name = document.getElementById('loginName').value.trim();
     var pass = document.getElementById('loginPass').value;
     var err = document.getElementById('loginErr');
     err.textContent = '';
     if(!name || !pass){ err.textContent = 'Identifiant et mot de passe requis.'; return; }
 
+    loginInProgress = true;
     var btn = document.getElementById('btnLogin');
+    var originalBtnText = btn.textContent;
     btn.disabled = true;
+    btn.textContent = 'Connexion…';
+
+    // Sur un réseau mobile lent, une requête peut rester bloquée longtemps
+    // sans jamais échouer ni réussir — ça donnait l'impression que le bouton
+    // "ne faisait rien". On force un abandon après 15s pour toujours avoir un
+    // retour clair (succès, erreur, ou "ça prend trop de temps, réessayez").
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function(){ controller.abort(); }, 15000);
+
     try{
       var resp = await fetch(loginApiUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: name, password: pass })
+        body: JSON.stringify({ username: name, password: pass }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       var data = await resp.json();
       if(!resp.ok){
         err.textContent = data.error || 'Identifiant ou mot de passe incorrect.';
@@ -1928,9 +1944,16 @@
       document.getElementById('loginScreen').classList.add('hidden');
       setupAccountUI();
     } catch(e){
-      err.textContent = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
+      clearTimeout(timeoutId);
+      if(e.name === 'AbortError'){
+        err.textContent = 'La connexion prend trop de temps (réseau lent ?). Réessayez.';
+      } else {
+        err.textContent = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
+      }
     } finally {
+      loginInProgress = false;
       btn.disabled = false;
+      btn.textContent = originalBtnText;
     }
   }
 
