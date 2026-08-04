@@ -213,6 +213,11 @@
     display:flex;align-items:flex-end;justify-content:center;
   }
   #reportModal.hidden, #listModal.hidden, #accountModal.hidden, #quickEditModal.hidden, #aboutModal.hidden, #auditLogModal.hidden, #roadCoverageModal.hidden, #arsModal.hidden{display:none;}
+  /* arsModal doit passer AU-DESSUS de l'écran de connexion (z-index 3000),
+     car c'est le seul modal qui peut s'ouvrir alors que loginScreen est
+     encore affiché (avant toute connexion). */
+  #arsModal{ z-index:3500 !important; }
+
   #customModalOverlay{
     position:fixed;inset:0;z-index:4000;
     background:rgba(20,25,20,.65);
@@ -410,7 +415,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-y</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-z</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -720,7 +725,7 @@
     // configurée dans le Worker Cloudflare. Portée volontairement limitée :
     // ne donne accès qu'à une liste en lecture seule des signalements
     // "Département", sans aucune donnée personnelle.
-    ARS_SECRET: "oU0aB-XW(1q=8]jK)9VS"
+    ARS_SECRET: " oU0aB-XW(1q=8]jK)9VS"
     // Plus de secret fixe pour les routes mairie : l'authentification se fait
     // par identifiant + mot de passe, vérifiés côté serveur (Worker), qui
     // délivre un jeton de session temporaire.
