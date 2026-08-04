@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-zd</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-ze</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1061,7 +1061,7 @@
   // ou 'bbox') pour que l'appelant sache si le résultat est fiable à long terme.
   function loadRoadsData(onSuccess, onFail){
     var queryInsee =
-      '[out:json][timeout:40];' +
+      '[out:json][timeout:25];' +
       'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
       'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
       'out body geom;';
@@ -1072,21 +1072,21 @@
       } else {
         console.warn('Contour INSEE introuvable ou vide dans OSM, repli sur la boîte englobante.');
         var queryBbox =
-          '[out:json][timeout:25]' +
+          '[out:json][timeout:20]' +
           '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
           'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
           'out body geom;';
-        fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 20000);
+        fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 12000);
       }
     }, function(){
       // La requête INSEE elle-même a échoué (réseau/serveur) : on tente quand même la bbox
       var queryBbox =
-        '[out:json][timeout:25]' +
+        '[out:json][timeout:20]' +
         '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
         'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
         'out body geom;';
-      fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 20000);
-    }, 45000);
+      fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 12000);
+    }, 15000);
   }
 
   function saveCache(data, precision){
@@ -1190,7 +1190,7 @@
       }
     } catch(e){ console.warn('Lecture cache contour impossible', e); }
 
-    var query = '[out:json][timeout:40];relation(' + OSM_RELATION_ID + ');out geom;';
+    var query = '[out:json][timeout:15];relation(' + OSM_RELATION_ID + ');out geom;';
     fetchFromOverpass(query, function(data){
       processBoundaryData(data);
       try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data })); }
@@ -1202,7 +1202,7 @@
       } else {
         console.warn('Impossible de charger le contour communal (limite non affichée, vérification dedans/dehors désactivée).');
       }
-    }, 40000);
+    }, 15000);
   }
 
   var HORS_TERRITOIRE_MSG = 'Ce point semble situé en dehors du territoire de Belsentes.\n\n' +
@@ -1217,24 +1217,38 @@
       'https://overpass.openstreetmap.ru/api/interpreter'
     ];
 
-    function tryEndpoint(i){
-      if(i >= endpoints.length){ onFail(); return; }
+    // On interroge les 3 serveurs EN MÊME TEMPS plutôt que l'un après l'autre :
+    // avant, si le premier serveur était en panne, on attendait quand même son
+    // délai complet avant de passer au suivant, ce qui pouvait cumuler jusqu'à
+    // 3 fois le temps d'attente. Maintenant, la première réponse qui arrive
+    // (le serveur le plus rapide/disponible) est utilisée directement.
+    var settled = false;
+    var failures = 0;
+
+    endpoints.forEach(function(url){
       var controller = new AbortController();
       var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-      fetch(endpoints[i] + '?data=' + encodeURIComponent(query), { signal: controller.signal })
+      fetch(url + '?data=' + encodeURIComponent(query), { signal: controller.signal })
         .then(function(r){
           clearTimeout(to);
           if(!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
-        .then(function(data){ onSuccess(data); })
+        .then(function(data){
+          if(settled) return; // une autre réponse est déjà arrivée en premier
+          settled = true;
+          onSuccess(data);
+        })
         .catch(function(err){
           clearTimeout(to);
-          console.warn('Overpass endpoint failed:', endpoints[i], err);
-          tryEndpoint(i + 1);
+          console.warn('Overpass endpoint failed:', url, err);
+          failures++;
+          if(!settled && failures === endpoints.length){
+            settled = true;
+            onFail();
+          }
         });
-    }
-    tryEndpoint(0);
+    });
   }
 
   // Classification approximative RC / RD / RN, basée sur le numéro de route (ref),
