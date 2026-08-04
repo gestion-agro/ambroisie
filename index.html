@@ -303,6 +303,20 @@
     box-shadow:2px 3px 0 rgba(0,0,0,.2);
     cursor:pointer;
   }
+  #btnArsListToggle{
+    position:fixed;left:14px;bottom:88px;z-index:1001;
+    background:var(--panel);color:var(--ink);
+    border:3px solid var(--ink);
+    border-radius:50%;
+    width:52px;height:52px;
+    font-size:20px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:2px 3px 0 rgba(0,0,0,.2);
+    cursor:pointer;
+  }
+  #btnArsListToggle.hidden{ display:none; }
+  #arsTopbar.hidden{ display:none !important; }
+  #arsLegend.hidden{ display:none !important; }
   #btnAccount{
     position:fixed;left:14px;bottom:150px;z-index:1001;
     background:var(--panel);color:var(--ink);
@@ -415,9 +429,24 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-za</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-zb</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
+
+<div id="arsTopbar" class="hidden" style="position:fixed;top:0;left:0;right:0;z-index:1500;background:var(--panel);border-bottom:3px solid var(--ink);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+  <div class="title" style="margin:0;">Consultation ARS<small>Belsentes · 07165 — lecture seule</small></div>
+  <button id="btnArsExit" style="background:none;border:2px solid var(--ink);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;flex:none;">✕ Quitter</button>
+</div>
+
+<div id="arsLegend" class="hidden" style="position:fixed;right:12px;top:72px;z-index:1000;background:var(--panel);border:2px solid var(--ink);border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.9;color:var(--ink);box-shadow:2px 2px 0 rgba(0,0,0,.15);">
+  <b style="font-size:12px;">Légende</b>
+  <div style="display:flex;align-items:center;gap:6px;"><span class="sw" style="background:#c9781f"></span> Départementale (RD)</div>
+  <div style="display:flex;align-items:center;gap:6px;"><span class="sw" style="border-top:2px dashed #1a1a1a;background:none;"></span> Limite communale</div>
+  <div style="display:flex;align-items:center;gap:6px;"><span class="sw" style="background:#c9781f;border-radius:50%;width:10px;height:10px;"></span> Signalement pas envoyé</div>
+  <div style="display:flex;align-items:center;gap:6px;"><span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> Signalement envoyé</div>
+</div>
+
+<button id="btnArsListToggle" class="hidden" title="Liste des signalements">☰</button>
 
 <div id="legend">
   <div id="legendHeader" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
@@ -1941,9 +1970,54 @@
   // ================= CONSULTATION ARS (lecture seule, sans connexion) =================
   function arsApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/ars-signalements'); }
 
-  document.getElementById('btnArsAccess').addEventListener('click', async function(){
-    document.getElementById('arsContent').innerHTML = '<p style="color:var(--muted);font-size:13px;">Chargement…</p>';
-    document.getElementById('arsModal').classList.remove('hidden');
+  var arsMode = false;
+  var arsMarkersLayer = L.layerGroup();
+  var arsItemsCache = [];
+
+  function arsMarkerIcon(sentToDept){
+    var color = sentToDept ? '#6b7280' : '#c9781f';
+    return L.divIcon({
+      className: '',
+      html: '<div class="signal-icon" style="background:' + color + ';"></div>',
+      iconSize: [26,26],
+      iconAnchor: [13,26]
+    });
+  }
+
+  function renderArsMarkers(items){
+    arsMarkersLayer.clearLayers();
+    items.forEach(function(s){
+      var m = L.marker([s.lat, s.lon], { icon: arsMarkerIcon(s.sentToDept) });
+      var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
+      m.bindPopup('<b>' + escapeHtml(s.refNumber || '—') + '</b><br>' +
+        (s.sentToDept ? 'Envoyé au département' : 'Pas encore envoyé') + '<br>' +
+        'Quantité : ' + escapeHtml(qtyLabel));
+      m.addTo(arsMarkersLayer);
+    });
+  }
+
+  function renderArsList(items){
+    var box = document.getElementById('arsContent');
+    if(items.length === 0){
+      box.innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement classé "Département" pour l\'instant.</p>';
+      return;
+    }
+    var sentCount = items.filter(function(s){ return s.sentToDept; }).length;
+    var summary = '<p style="font-size:12px;font-weight:700;margin-bottom:10px;">' + items.length + ' signalement(s) au total · ' + sentCount + ' envoyé(s) · ' + (items.length - sentCount) + ' pas encore envoyé(s)</p>';
+    box.innerHTML = summary + items.map(function(s){
+      var lambert = wgs84ToLambert93(s.lat, s.lon);
+      var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
+      return '<div class="citizen-row">' +
+        '<span class="status-pill' + (s.sentToDept ? ' done' : '') + '">' + (s.sentToDept ? 'Envoyé au département' : 'Pas encore envoyé') + '</span>' +
+        '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + (s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '—') + '</div>' +
+        '<div class="meta">Quantité : ' + escapeHtml(qtyLabel) + '</div>' +
+        '<div class="meta">GPS : ' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
+        '<div class="meta">Lambert-93 : X=' + lambert.x.toFixed(2) + ' · Y=' + lambert.y.toFixed(2) + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  async function loadArsData(){
     try{
       var resp = await fetch(arsApiUrl(), { method: 'GET', headers: { 'X-App-Secret': CONFIG.ARS_SECRET } });
       if(resp.status === 403){
@@ -1956,27 +2030,63 @@
       }
       if(!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
-      var items = (data.items || []).slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
-      if(items.length === 0){
-        document.getElementById('arsContent').innerHTML = '<p style="color:var(--muted);font-size:13px;">Aucun signalement classé "Département" pour l\'instant.</p>';
-        return;
-      }
-      var sentCount = items.filter(function(s){ return s.sentToDept; }).length;
-      var summary = '<p style="font-size:12px;font-weight:700;margin-bottom:10px;">' + items.length + ' signalement(s) au total · ' + sentCount + ' envoyé(s) · ' + (items.length - sentCount) + ' pas encore envoyé(s)</p>';
-      document.getElementById('arsContent').innerHTML = summary + items.map(function(s){
-        var lambert = wgs84ToLambert93(s.lat, s.lon);
-        var qtyLabel = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
-        return '<div class="citizen-row">' +
-          '<span class="status-pill' + (s.sentToDept ? ' done' : '') + '">' + (s.sentToDept ? 'Envoyé au département' : 'Pas encore envoyé') + '</span>' +
-          '<div class="meta"><b>' + escapeHtml(s.refNumber || '—') + '</b> · ' + (s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '—') + '</div>' +
-          '<div class="meta">Quantité : ' + escapeHtml(qtyLabel) + '</div>' +
-          '<div class="meta">GPS : ' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
-          '<div class="meta">Lambert-93 : X=' + lambert.x.toFixed(2) + ' · Y=' + lambert.y.toFixed(2) + '</div>' +
-        '</div>';
-      }).join('');
+      arsItemsCache = (data.items || []).slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+      renderArsList(arsItemsCache);
+      renderArsMarkers(arsItemsCache);
     } catch(e){
       document.getElementById('arsContent').innerHTML = '<p style="color:var(--danger);font-size:13px;">Erreur lors du chargement. Réessayez plus tard.</p>';
     }
+  }
+
+  function enterArsMode(){
+    arsMode = true;
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('arsTopbar').classList.remove('hidden');
+    document.getElementById('arsLegend').classList.remove('hidden');
+    document.getElementById('btnArsListToggle').classList.remove('hidden');
+    document.getElementById('legend').style.display = 'none'; // évite la superposition avec arsLegend, même emplacement
+    // Les boutons réservés aux conseillers (signaler, compte, suivi routes,
+    // suivi trajet...) ne doivent jamais apparaître pour un accès ARS.
+    ['btnListToggle','btnReport','btnPlacePin','btnAccount','btnRoadCoverage','controls'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.style.display = 'none';
+    });
+    arsMarkersLayer.addTo(map);
+
+    // On n'affiche que ce qui concerne l'ARS : limite communale + RD, rien
+    // d'autre (pas les RC/RN/chemins privés, pas les signalements normaux).
+    if(map.hasLayer(roadsLayerRC)) map.removeLayer(roadsLayerRC);
+    if(map.hasLayer(roadsLayerRN)) map.removeLayer(roadsLayerRN);
+    if(map.hasLayer(roadsLayerPath)) map.removeLayer(roadsLayerPath);
+    if(!map.hasLayer(roadsLayerRD)) map.addLayer(roadsLayerRD);
+
+    loadArsData();
+  }
+
+  function exitArsMode(){
+    arsMode = false;
+    document.getElementById('arsTopbar').classList.add('hidden');
+    document.getElementById('arsLegend').classList.add('hidden');
+    document.getElementById('btnArsListToggle').classList.add('hidden');
+    document.getElementById('arsModal').classList.add('hidden');
+    document.getElementById('legend').style.display = '';
+    ['btnListToggle','btnReport','btnPlacePin','btnAccount','btnRoadCoverage','controls'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.style.display = '';
+    });
+    map.removeLayer(arsMarkersLayer);
+    map.removeLayer(roadsLayerRD);
+    map.addLayer(roadsLayerRC);
+    document.getElementById('loginScreen').classList.remove('hidden');
+  }
+
+  document.getElementById('btnArsAccess').addEventListener('click', function(){
+    document.getElementById('arsContent').innerHTML = '<p style="color:var(--muted);font-size:13px;">Chargement…</p>';
+    enterArsMode();
+  });
+  document.getElementById('btnArsExit').addEventListener('click', exitArsMode);
+  document.getElementById('btnArsListToggle').addEventListener('click', function(){
+    document.getElementById('arsModal').classList.remove('hidden');
   });
   document.getElementById('btnCloseArs').addEventListener('click', function(){
     document.getElementById('arsModal').classList.add('hidden');
