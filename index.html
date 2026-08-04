@@ -391,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-q</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-r</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -586,6 +586,14 @@
         </p>
         <button class="btn" id="btnExportCSV" style="width:100%;margin-bottom:8px;">📊 Exporter les signalements en CSV</button>
         <button class="btn" id="btnExportJSON" style="width:100%;">💾 Télécharger une sauvegarde complète (JSON)</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Export département</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
+          Exporte uniquement les signalements classés "Département" et pas encore envoyés, avec numéro SM, commune,
+          date, quantité, route la plus proche, et coordonnées GPS dans les deux formats (WGS84 + Lambert-93).
+        </p>
+        <button class="btn" id="btnExportDept" style="width:100%;">📤 Exporter Département (pas envoyé)</button>
       </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;">Journal des événements</h3>
@@ -2192,6 +2200,62 @@
       y: Ys - R * Math.cos(gamma)
     };
   }
+
+  // Trouve la route (parmi celles déjà chargées sur la carte) la plus proche
+  // d'un point donné — utile pour indiquer le nom/numéro de route d'un
+  // signalement classé "Département" quand ce n'est pas déjà précisé.
+  function findNearestRoadLabel(lat, lon){
+    var best = null;
+    var bestDist = Infinity;
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      entry.polylines.forEach(function(line){
+        (function walk(arr){
+          if(arr.length && Array.isArray(arr[0])){
+            arr.forEach(walk);
+          } else {
+            arr.forEach(function(pt){
+              var d = haversineMeters(lat, lon, pt.lat, pt.lng);
+              if(d < bestDist){ bestDist = d; best = entry; }
+            });
+          }
+        })(line.getLatLngs());
+      });
+    });
+    return best ? { label: best.label, roadClass: best.roadClass, distance: Math.round(bestDist) } : null;
+  }
+
+  document.getElementById('btnExportDept').addEventListener('click', function(){
+    var toExport = signalements.filter(function(s){
+      return !getErreur(s) && getClassification(s) === 'departement' && !getSentToDept(s);
+    });
+    if(toExport.length === 0){
+      customAlert('Aucun signalement "Département (pas envoyé)" à exporter pour l\'instant.');
+      return;
+    }
+    var cols = ['N°','Commune','Reference_SM','Date','Quantite','Route_proche','Latitude','Longitude','X_Lambert93','Y_Lambert93'];
+    var header = cols.join(',');
+    var rows = toExport.map(function(s, i){
+      var lambert = wgs84ToLambert93(s.lat, s.lon);
+      var nearest = findNearestRoadLabel(s.lat, s.lon);
+      var routeLabel = nearest ? (nearest.label + ' (' + nearest.distance + ' m)') : '';
+      return [
+        i + 1,
+        'Belsentes (07165)',
+        s.refNumber || '',
+        s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '',
+        s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '',
+        routeLabel,
+        s.lat,
+        s.lon,
+        lambert.x,
+        lambert.y
+      ].map(csvEscape).join(',');
+    });
+    var csv = '\uFEFF' + header + '\n' + rows.join('\n');
+    var dateStr = new Date().toISOString().slice(0,10);
+    downloadFile('departement-non-envoye-belsentes-' + dateStr + '.csv', csv, 'text/csv;charset=utf-8');
+  });
 
   document.getElementById('btnExportCSV').addEventListener('click', function(){
     var cols = ['refNumber','date','name','lat','lon','X_Lambert93','Y_Lambert93','quantity','classification','sentToDept','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
