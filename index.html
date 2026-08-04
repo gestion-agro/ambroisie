@@ -391,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-s</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-t</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -2282,6 +2282,11 @@
     btn.disabled = true;
     btn.textContent = 'Génération…';
     try{
+      var thinBorder = { style: docx.BorderStyle.SINGLE, size: 2, color: '000000' };
+      var tableBorders = {
+        top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder,
+        insideHorizontal: thinBorder, insideVertical: thinBorder
+      };
       var headerCells = ['N°','Réf. SM','Date','Quantité','Route la plus proche','Latitude','Longitude','X (Lambert-93)','Y (Lambert-93)'];
       function headerRow(){
         return new docx.TableRow({
@@ -2289,6 +2294,7 @@
           children: headerCells.map(function(text){
             return new docx.TableCell({
               shading: { fill: 'DDEBD3' },
+              margins: { top: 80, bottom: 80, left: 80, right: 80 },
               children: [new docx.Paragraph({ children: [new docx.TextRun({ text: text, bold: true, size: 18 })] })]
             });
           })
@@ -2302,6 +2308,7 @@
         return new docx.TableRow({
           children: vals.map(function(text){
             return new docx.TableCell({
+              margins: { top: 60, bottom: 60, left: 80, right: 80 },
               children: [new docx.Paragraph({ children: [new docx.TextRun({ text: text || '—', size: 18 })] })]
             });
           })
@@ -2310,6 +2317,7 @@
 
       var table = new docx.Table({
         width: { size: 100, type: docx.WidthType.PERCENTAGE },
+        borders: tableBorders,
         rows: [headerRow()].concat(rows.map(dataRow))
       });
 
