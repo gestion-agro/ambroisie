@@ -391,7 +391,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-r</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-s</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -593,7 +593,8 @@
           Exporte uniquement les signalements classés "Département" et pas encore envoyés, avec numéro SM, commune,
           date, quantité, route la plus proche, et coordonnées GPS dans les deux formats (WGS84 + Lambert-93).
         </p>
-        <button class="btn" id="btnExportDept" style="width:100%;">📤 Exporter Département (pas envoyé)</button>
+        <button class="btn" id="btnExportDept" style="width:100%;margin-bottom:8px;">📤 Exporter Département en CSV</button>
+        <button class="btn" id="btnExportDeptWord" style="width:100%;">📄 Exporter Département (Word)</button>
       </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;">Journal des événements</h3>
@@ -687,6 +688,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -2225,36 +2227,129 @@
     return best ? { label: best.label, roadClass: best.roadClass, distance: Math.round(bestDist) } : null;
   }
 
-  document.getElementById('btnExportDept').addEventListener('click', function(){
+  // Prépare les lignes de l'export "Département (pas envoyé)", réutilisées
+  // pour le CSV et pour le Word.
+  function buildDeptExportRows(){
     var toExport = signalements.filter(function(s){
       return !getErreur(s) && getClassification(s) === 'departement' && !getSentToDept(s);
     });
-    if(toExport.length === 0){
+    return toExport.map(function(s, i){
+      var lambert = wgs84ToLambert93(s.lat, s.lon);
+      var nearest = findNearestRoadLabel(s.lat, s.lon);
+      var routeLabel = nearest ? (nearest.label + ' (' + nearest.distance + ' m)') : '';
+      return {
+        num: i + 1,
+        commune: 'Belsentes (07165)',
+        ref: s.refNumber || '',
+        date: s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '',
+        quantite: s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '',
+        route: routeLabel,
+        lat: s.lat,
+        lon: s.lon,
+        x: lambert.x,
+        y: lambert.y
+      };
+    });
+  }
+
+  document.getElementById('btnExportDept').addEventListener('click', function(){
+    var rows = buildDeptExportRows();
+    if(rows.length === 0){
       customAlert('Aucun signalement "Département (pas envoyé)" à exporter pour l\'instant.');
       return;
     }
     var cols = ['N°','Commune','Reference_SM','Date','Quantite','Route_proche','Latitude','Longitude','X_Lambert93','Y_Lambert93'];
     var header = cols.join(',');
-    var rows = toExport.map(function(s, i){
-      var lambert = wgs84ToLambert93(s.lat, s.lon);
-      var nearest = findNearestRoadLabel(s.lat, s.lon);
-      var routeLabel = nearest ? (nearest.label + ' (' + nearest.distance + ' m)') : '';
-      return [
-        i + 1,
-        'Belsentes (07165)',
-        s.refNumber || '',
-        s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '',
-        s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '',
-        routeLabel,
-        s.lat,
-        s.lon,
-        lambert.x,
-        lambert.y
-      ].map(csvEscape).join(',');
+    var csvRows = rows.map(function(r){
+      return [r.num, r.commune, r.ref, r.date, r.quantite, r.route, r.lat, r.lon, r.x, r.y].map(csvEscape).join(',');
     });
-    var csv = '\uFEFF' + header + '\n' + rows.join('\n');
+    var csv = '\uFEFF' + header + '\n' + csvRows.join('\n');
     var dateStr = new Date().toISOString().slice(0,10);
     downloadFile('departement-non-envoye-belsentes-' + dateStr + '.csv', csv, 'text/csv;charset=utf-8');
+  });
+
+  document.getElementById('btnExportDeptWord').addEventListener('click', async function(){
+    var rows = buildDeptExportRows();
+    if(rows.length === 0){
+      await customAlert('Aucun signalement "Département (pas envoyé)" à exporter pour l\'instant.');
+      return;
+    }
+    if(typeof docx === 'undefined'){
+      await customAlert('La bibliothèque de génération Word n\'a pas pu se charger (vérifiez votre connexion) — réessayez.');
+      return;
+    }
+    var btn = document.getElementById('btnExportDeptWord');
+    btn.disabled = true;
+    btn.textContent = 'Génération…';
+    try{
+      var headerCells = ['N°','Réf. SM','Date','Quantité','Route la plus proche','Latitude','Longitude','X (Lambert-93)','Y (Lambert-93)'];
+      function headerRow(){
+        return new docx.TableRow({
+          tableHeader: true,
+          children: headerCells.map(function(text){
+            return new docx.TableCell({
+              shading: { fill: 'DDEBD3' },
+              children: [new docx.Paragraph({ children: [new docx.TextRun({ text: text, bold: true, size: 18 })] })]
+            });
+          })
+        });
+      }
+      function dataRow(r){
+        var vals = [
+          String(r.num), r.ref, r.date, r.quantite, r.route,
+          r.lat.toFixed(6), r.lon.toFixed(6), r.x.toFixed(2), r.y.toFixed(2)
+        ];
+        return new docx.TableRow({
+          children: vals.map(function(text){
+            return new docx.TableCell({
+              children: [new docx.Paragraph({ children: [new docx.TextRun({ text: text || '—', size: 18 })] })]
+            });
+          })
+        });
+      }
+
+      var table = new docx.Table({
+        width: { size: 100, type: docx.WidthType.PERCENTAGE },
+        rows: [headerRow()].concat(rows.map(dataRow))
+      });
+
+      var doc = new docx.Document({
+        sections: [{
+          properties: { page: { size: { orientation: docx.PageOrientation.LANDSCAPE } } },
+          children: [
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: 'Signalements ambroisie à transmettre au Département', bold: true, size: 32 })],
+              spacing: { after: 100 }
+            }),
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: 'Commune de Belsentes (07165) — Ardèche', size: 22, italics: true })],
+              spacing: { after: 100 }
+            }),
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: 'Généré le ' + new Date().toLocaleString('fr-FR') + ' · ' + rows.length + ' signalement(s)', size: 20 })],
+              spacing: { after: 300 }
+            }),
+            table
+          ]
+        }]
+      });
+
+      var blob = await docx.Packer.toBlob(doc);
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'departement-non-envoye-belsentes-' + new Date().toISOString().slice(0,10) + '.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+    } catch(e){
+      console.error(e);
+      await customAlert('Erreur lors de la génération du document Word.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📄 Exporter Département (Word)';
+    }
   });
 
   document.getElementById('btnExportCSV').addEventListener('click', function(){
