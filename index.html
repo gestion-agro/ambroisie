@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-a</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-b</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -576,7 +576,11 @@
     </div>
     <div class="field">
       <label>Nouveau mot de passe</label>
-      <input type="text" id="newPassword" placeholder="Nouveau mot de passe">
+      <input type="password" id="newPassword" placeholder="Nouveau mot de passe" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label>Confirmer le nouveau mot de passe</label>
+      <input type="password" id="newPasswordConfirm" placeholder="Retapez le même mot de passe" autocomplete="new-password">
     </div>
     <div class="sheet-actions">
       <button class="btn" id="btnCancelAccount">Annuler</button>
@@ -651,20 +655,13 @@
       </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;">Journal des événements</h3>
-        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Connexions, créations/suppressions de comptes, écritures de signalements.</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Connexions, créations/suppressions de comptes, écritures de signalements (200 dernières entrées).</p>
         <button class="btn" id="btnShowAuditLog" style="width:100%;">📜 Voir le journal d'accès</button>
       </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;color:var(--danger);">⚠️ Réinitialiser les tracés de tous les conseillers</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface l'historique de trajet de TOUS les conseillers (utile pour repartir de zéro à chaque nouvelle campagne).</p>
         <button class="btn" id="btnResetAllTracks" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Réinitialiser tous les tracés</button>
-      </div>
-      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
-        <h3 style="font-size:14px;">Sécurité</h3>
-        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">
-          Journal des connexions et modifications récentes (200 dernières entrées).
-        </p>
-        <button class="btn" id="btnShowAuditLog" style="width:100%;">📜 Voir le journal d'accès</button>
       </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
@@ -2711,8 +2708,10 @@
 
   document.getElementById('btnChangePassword').addEventListener('click', async function(){
     var np = document.getElementById('newPassword').value;
+    var npConfirm = document.getElementById('newPasswordConfirm').value;
     var err = document.getElementById('accountErr');
     if(!np || np.length < 4){ err.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
+    if(np !== npConfirm){ err.textContent = 'Les deux mots de passe ne correspondent pas.'; return; }
     try{
       var resp = await fetch(usersApiUrl() + '/change-password', {
         method: 'POST',
@@ -2723,6 +2722,7 @@
       var data = await resp.json();
       if(!resp.ok){ throw new Error(data.error || 'Erreur'); }
       document.getElementById('newPassword').value = '';
+      document.getElementById('newPasswordConfirm').value = '';
       err.style.color = 'var(--line)';
       err.textContent = 'Mot de passe mis à jour.';
     } catch(e){
