@@ -248,7 +248,7 @@
   }
   .field{margin-bottom:12px;}
   .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px;}
-  .field input[type=text], .field textarea{
+  .field input[type=text], .field input[type=password], .field textarea{
     width:100%;font-size:15px;padding:10px 12px;
     border:2px solid #ccc;border-radius:8px;
     font-family:inherit;
@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-b</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-c</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -605,7 +605,7 @@
       </div>
       <div class="field">
         <label>Mot de passe initial</label>
-        <input type="text" id="newUserPass" placeholder="mot de passe temporaire">
+        <input type="password" id="newUserPass" placeholder="mot de passe temporaire" autocomplete="new-password">
       </div>
       <button class="btn primary" id="btnAddUser" style="width:100%;">Créer l'utilisateur</button>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
