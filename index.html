@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-07-30-ze</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-a</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1200,9 +1200,28 @@
         console.warn('Réseau indisponible : affichage du contour en cache (peut-être périmé).');
         processBoundaryData(staleBoundary);
       } else {
-        console.warn('Impossible de charger le contour communal (limite non affichée, vérification dedans/dehors désactivée).');
+        // Le contour de secours intégré (FALLBACK_BOUNDARY_RINGS) reste
+        // affiché dans tous les cas — on n'a juste pas pu le remplacer par une
+        // version plus précise. On informe visiblement (pas seulement dans la
+        // console) que les routes/contour précis n'ont pas pu être chargés.
+        console.warn('Impossible de contacter OpenStreetMap : le contour de secours intégré reste affiché (moins précis que la version en ligne).');
+        showNetworkWarningBanner();
       }
     }, 15000);
+  }
+
+  var networkWarningShown = false;
+  function showNetworkWarningBanner(){
+    if(networkWarningShown) return;
+    networkWarningShown = true;
+    var banner = document.createElement('div');
+    banner.id = 'networkWarningBanner';
+    banner.style.cssText = 'position:fixed;left:10px;right:10px;top:72px;z-index:1450;background:#fbeecd;color:#8a5a1f;border:2px solid #8a5a1f;border-radius:10px;padding:10px 14px;font-size:12px;box-shadow:2px 2px 0 rgba(0,0,0,.15);';
+    banner.innerHTML = '⚠️ Impossible de contacter OpenStreetMap (réseau/pare-feu ?). Les routes et le contour précis ne se sont pas chargés — une version de secours moins précise reste affichée. <button id="btnDismissNetworkWarning" style="margin-left:8px;background:none;border:1px solid #8a5a1f;border-radius:6px;padding:3px 8px;cursor:pointer;color:#8a5a1f;">OK</button>';
+    document.body.appendChild(banner);
+    document.getElementById('btnDismissNetworkWarning').addEventListener('click', function(){
+      banner.remove();
+    });
   }
 
   var HORS_TERRITOIRE_MSG = 'Ce point semble situé en dehors du territoire de Belsentes.\n\n' +
@@ -2577,7 +2596,9 @@
     user_created: '➕ Utilisateur créé',
     user_deleted: '➖ Utilisateur supprimé',
     password_changed: '🔑 Mot de passe changé',
-    signalements_write: '💾 Signalements modifiés'
+    signalements_write: '💾 Signalements modifiés',
+    ars_access: '🏥 Consultation ARS',
+    ars_access_denied: '🏥 Tentative ARS refusée (mauvais code)'
   };
 
   document.getElementById('btnShowAuditLog').addEventListener('click', async function(){
@@ -2599,7 +2620,7 @@
         var extra = (ev.by && ev.username && ev.by !== ev.username) ? ' (par ' + escapeHtml(ev.by) + ')' : '';
         return '<div class="citizen-row">' +
           '<div class="meta">' + label + '</div>' +
-          '<div class="meta">' + escapeHtml(who) + extra + '</div>' +
+          (who ? '<div class="meta">' + escapeHtml(who) + extra + '</div>' : '') +
           '<div class="meta">' + (ev.at ? new Date(ev.at).toLocaleString('fr-FR') : '—') + '</div>' +
         '</div>';
       }).join('');
