@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-d</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-e</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -586,7 +586,7 @@
       <button class="btn" id="btnCancelAccount">Annuler</button>
       <button class="btn primary" id="btnChangePassword">Changer mon mot de passe</button>
     </div>
-    <div id="passwordChangeMsg" style="font-size:13px;text-align:center;min-height:18px;margin-top:-6px;"></div>
+    <div id="passwordChangeMsg" style="font-size:13px;text-align:center;min-height:18px;margin-top:10px;margin-bottom:6px;"></div>
     <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
       <h3>Gérer les utilisateurs (admin)</h3>
       <div id="userListContent"></div>
@@ -2713,9 +2713,13 @@
     var np = document.getElementById('newPassword').value;
     var npConfirm = document.getElementById('newPasswordConfirm').value;
     var msg = document.getElementById('passwordChangeMsg');
+    var btn = document.getElementById('btnChangePassword');
     msg.textContent = '';
     if(!np || np.length < 4){ msg.style.color = 'var(--danger)'; msg.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
     if(np !== npConfirm){ msg.style.color = 'var(--danger)'; msg.textContent = 'Les deux mots de passe ne correspondent pas.'; return; }
+    var originalBtnText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Changement…';
     try{
       var resp = await fetch(usersApiUrl() + '/change-password', {
         method: 'POST',
@@ -2734,6 +2738,9 @@
       msg.style.color = 'var(--danger)';
       msg.style.fontWeight = '700';
       msg.textContent = 'Erreur lors de l\'enregistrement.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalBtnText;
     }
   });
 
