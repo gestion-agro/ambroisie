@@ -429,7 +429,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-c</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-d</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -586,6 +586,7 @@
       <button class="btn" id="btnCancelAccount">Annuler</button>
       <button class="btn primary" id="btnChangePassword">Changer mon mot de passe</button>
     </div>
+    <div id="passwordChangeMsg" style="font-size:13px;text-align:center;min-height:18px;margin-top:-6px;"></div>
     <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
       <h3>Gérer les utilisateurs (admin)</h3>
       <div id="userListContent"></div>
@@ -2233,7 +2234,9 @@
 
   document.getElementById('btnAccount').addEventListener('click', function(){
     document.getElementById('accountErr').textContent = '';
+    document.getElementById('passwordChangeMsg').textContent = '';
     document.getElementById('newPassword').value = '';
+    document.getElementById('newPasswordConfirm').value = '';
     document.getElementById('newUserName').value = '';
     document.getElementById('newUserPass').value = '';
     if(currentRole === 'admin') renderUserList();
@@ -2709,9 +2712,10 @@
   document.getElementById('btnChangePassword').addEventListener('click', async function(){
     var np = document.getElementById('newPassword').value;
     var npConfirm = document.getElementById('newPasswordConfirm').value;
-    var err = document.getElementById('accountErr');
-    if(!np || np.length < 4){ err.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
-    if(np !== npConfirm){ err.textContent = 'Les deux mots de passe ne correspondent pas.'; return; }
+    var msg = document.getElementById('passwordChangeMsg');
+    msg.textContent = '';
+    if(!np || np.length < 4){ msg.style.color = 'var(--danger)'; msg.textContent = 'Choisissez un mot de passe d\'au moins 4 caractères.'; return; }
+    if(np !== npConfirm){ msg.style.color = 'var(--danger)'; msg.textContent = 'Les deux mots de passe ne correspondent pas.'; return; }
     try{
       var resp = await fetch(usersApiUrl() + '/change-password', {
         method: 'POST',
@@ -2723,11 +2727,13 @@
       if(!resp.ok){ throw new Error(data.error || 'Erreur'); }
       document.getElementById('newPassword').value = '';
       document.getElementById('newPasswordConfirm').value = '';
-      err.style.color = 'var(--line)';
-      err.textContent = 'Mot de passe mis à jour.';
+      msg.style.color = 'var(--line)';
+      msg.style.fontWeight = '700';
+      msg.textContent = '✓ Mot de passe mis à jour.';
     } catch(e){
-      err.style.color = '';
-      err.textContent = 'Erreur lors de l\'enregistrement.';
+      msg.style.color = 'var(--danger)';
+      msg.style.fontWeight = '700';
+      msg.textContent = 'Erreur lors de l\'enregistrement.';
     }
   });
 
