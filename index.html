@@ -3,8 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.sheetjs.com;
+  style-src 'self' 'unsafe-inline' https://unpkg.com;
+  img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com;
+  connect-src 'self' https://ambroisie-belsentes-api.clement-thieuleux.workers.dev https://overpass-api.de https://overpass.kumi.systems https://overpass.openstreetmap.ru;
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+">
 <title>Inspection Ambroisie — Belsentes</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
 <style>
   :root{
     --ink:#1a2b1f;
@@ -429,7 +440,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-e</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-f</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -738,7 +749,7 @@
   <div id="loadErr" style="display:none" class="err-box"></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
