@@ -440,7 +440,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-05-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-a</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -598,8 +598,15 @@
       <button class="btn primary" id="btnChangePassword">Changer mon mot de passe</button>
     </div>
     <div id="passwordChangeMsg" style="font-size:13px;text-align:center;min-height:18px;margin-top:10px;margin-bottom:6px;"></div>
+    <div style="margin-top:6px;border-top:2px solid #ddd;padding-top:14px;">
+      <h3 style="font-size:14px;">Vues en tableau</h3>
+      <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Pour gérer plusieurs signalements ou routes d'un coup.</p>
+      <a href="table.html" class="btn" style="display:block;text-align:center;width:100%;margin-bottom:8px;text-decoration:none;box-sizing:border-box;">📋 Tableau des signalements</a>
+      <a href="roads.html" class="btn" style="display:block;text-align:center;width:100%;text-decoration:none;box-sizing:border-box;">🛣️ Tableau des routes</a>
+    </div>
     <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
       <h3>Gérer les utilisateurs (admin)</h3>
+      <a href="users.html" class="btn" style="display:block;text-align:center;width:100%;margin-bottom:10px;text-decoration:none;box-sizing:border-box;">👤 Ouvrir en page dédiée</a>
       <div id="userListContent"></div>
       <div class="field" style="margin-top:14px;display:flex;gap:10px;">
         <div style="flex:1;">
@@ -893,7 +900,16 @@
       .then(function(data){
         roadCoverageSha = data.sha || null;
         roadCoverage = {};
-        (data.items || []).forEach(function(item){ roadCoverage[item.key] = { by: item.by, at: item.at }; });
+        (data.items || []).forEach(function(item){
+          // Compatibilité avec l'ancien format : la simple présence d'une
+          // entrée signifiait "parcourue". Si le champ "covered" n'existe
+          // pas, on considère donc que c'était le cas.
+          roadCoverage[item.key] = {
+            covered: item.covered !== undefined ? item.covered : true,
+            by: item.by, at: item.at,
+            customName: item.customName || null
+          };
+        });
         applyRoadCoverageStyling();
       })
       .catch(function(e){ console.warn('Erreur chargement couverture des routes', e); });
@@ -901,7 +917,8 @@
 
   function saveRoadCoverage(){
     var items = Object.keys(roadCoverage).map(function(key){
-      return { key: key, by: roadCoverage[key].by, at: roadCoverage[key].at };
+      var e = roadCoverage[key];
+      return { key: key, covered: !!e.covered, by: e.by, at: e.at, customName: e.customName || null };
     });
     return fetch(roadCoverageApiUrl(), {
       method: 'PUT',
@@ -914,11 +931,11 @@
   }
 
   function toggleRoadCoverage(key){
-    if(roadCoverage[key]){
-      delete roadCoverage[key];
-    } else {
-      roadCoverage[key] = { by: getUserFullName(currentUser), at: new Date().toISOString() };
-    }
+    var e = roadCoverage[key] || { customName: null };
+    e.covered = !e.covered;
+    e.by = getUserFullName(currentUser);
+    e.at = new Date().toISOString();
+    roadCoverage[key] = e;
     applyRoadCoverageStyling();
     saveRoadCoverage().catch(function(){ /* déjà appliqué visuellement, on retentera au prochain chargement */ });
   }
@@ -934,7 +951,7 @@
     var msg = classLabel + '\nStatut : ' + (covered ? 'Parcourue' : 'Non parcourue') +
       (covered && info ? '\nPar ' + (info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') : '');
     showModal({
-      title: entry.label,
+      title: roadDisplayLabel(entry),
       message: msg,
       buttons: [
         { label: 'Fermer', value: 'close' },
@@ -945,6 +962,14 @@
     });
   }
 
+  // Nom affiché d'une route : priorité au nom personnalisé enregistré
+  // manuellement (utile pour les nombreuses voies sans nom dans OSM), sinon
+  // le nom OSM d'origine.
+  function roadDisplayLabel(entry){
+    var custom = roadCoverage[entry.key] && roadCoverage[entry.key].customName;
+    return custom || entry.label;
+  }
+
   function renderRoadCoverageList(filterText){
     var box = document.getElementById('roadCoverageContent');
     var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; })
@@ -952,10 +977,10 @@
       // explicitement marqués "parcourus" depuis la carte — sinon ils
       // encombreraient la liste sans concerner l'arrachage mairie.
       .filter(function(e){ return e.roadClass !== 'PATH' || isRoadCovered(e.key); });
-    entries.sort(function(a,b){ return a.label.localeCompare(b.label, 'fr'); });
+    entries.sort(function(a,b){ return roadDisplayLabel(a).localeCompare(roadDisplayLabel(b), 'fr'); });
     if(filterText){
       var q = filterText.toLowerCase();
-      entries = entries.filter(function(e){ return e.label.toLowerCase().indexOf(q) !== -1; });
+      entries = entries.filter(function(e){ return roadDisplayLabel(e).toLowerCase().indexOf(q) !== -1; });
     }
     var doneCount = entries.filter(function(e){ return isRoadCovered(e.key); }).length;
     document.getElementById('roadCoverageCount').textContent = doneCount + ' / ' + entries.length + ' parcourues';
@@ -972,7 +997,7 @@
       return '<div class="citizen-row">' +
         '<span class="status-pill' + (covered ? ' done' : '') + '">' + (covered ? 'Parcourue' : 'Non parcourue') + '</span> ' +
         '<span class="status-pill">' + classLabel + '</span>' +
-        '<div class="meta" style="margin-top:6px;"><b>' + escapeHtml(e.label) + '</b></div>' +
+        '<div class="meta" style="margin-top:6px;"><b>' + escapeHtml(roadDisplayLabel(e)) + '</b></div>' +
         (covered && info ? '<div class="meta" style="font-style:italic;">Par ' + escapeHtml(info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') + '</div>' : '') +
         '<div class="row-actions">' +
           '<button class="btn" data-gotoroad="' + e.key + '" style="flex:1;padding:8px;font-size:11px;">Carte</button>' +
@@ -1333,7 +1358,7 @@
     return roadClass + '::way' + elId;
   }
 
-  function isRoadCovered(key){ return !!roadCoverage[key]; }
+  function isRoadCovered(key){ return !!(roadCoverage[key] && roadCoverage[key].covered); }
 
   function applyRoadCoverageStyling(){
     Object.keys(roadsIndex).forEach(function(key){
@@ -2472,7 +2497,7 @@
         })(line.getLatLngs());
       });
     });
-    return best ? { label: best.label, roadClass: best.roadClass, distance: Math.round(bestDist) } : null;
+    return best ? { label: roadDisplayLabel(best), roadClass: best.roadClass, distance: Math.round(bestDist) } : null;
   }
 
   // Prépare les lignes de l'export "Département (pas envoyé)", réutilisées
