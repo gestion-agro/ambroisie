@@ -441,7 +441,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-b</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-c</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -607,27 +607,8 @@
     </div>
     <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
       <h3>Gérer les utilisateurs (admin)</h3>
-      <a href="users.html" class="btn" style="width:100%;margin-bottom:10px;box-sizing:border-box;">👤 Ouvrir en page dédiée</a>
+      <a href="users.html" class="btn" style="width:100%;margin-bottom:10px;box-sizing:border-box;">👤 Ouvrir en page dédiée (créer/supprimer)</a>
       <div id="userListContent"></div>
-      <div class="field" style="margin-top:14px;display:flex;gap:10px;">
-        <div style="flex:1;">
-          <label>Prénom</label>
-          <input type="text" id="newUserFirstName" placeholder="Prénom">
-        </div>
-        <div style="flex:1;">
-          <label>Nom</label>
-          <input type="text" id="newUserLastName" placeholder="Nom">
-        </div>
-      </div>
-      <div class="field">
-        <label>Identifiant de connexion</label>
-        <input type="text" id="newUserName" placeholder="ex: jdupont">
-      </div>
-      <div class="field">
-        <label>Mot de passe initial</label>
-        <input type="password" id="newUserPass" placeholder="mot de passe temporaire" autocomplete="new-password">
-      </div>
-      <button class="btn primary" id="btnAddUser" style="width:100%;">Créer l'utilisateur</button>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;">Numéros de référence (SM)</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Attribue un numéro (SM-AAMMJJ-XXXX) à tous les signalements existants qui n'en ont pas encore.</p>
@@ -951,16 +932,38 @@
     var classLabel = entry.roadClass === 'RD' ? 'Départementale (RD)' : (entry.roadClass === 'RN' ? 'Nationale (RN)' : (entry.roadClass === 'PATH' ? 'Chemin de terre / privé (indicatif)' : 'Communale (RC)'));
     var msg = classLabel + '\nStatut : ' + (covered ? 'Parcourue' : 'Non parcourue') +
       (covered && info ? '\nPar ' + (info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') : '');
+    var buttons = [
+      { label: 'Fermer', value: 'close' },
+      { label: covered ? 'Remettre non parcourue' : 'Marquer parcourue', value: 'toggle', primary: !covered, danger: covered }
+    ];
+    if(currentRole === 'admin'){
+      buttons.splice(1, 0, { label: '✏️ Modifier le nom', value: 'rename' });
+    }
     showModal({
       title: roadDisplayLabel(entry),
       message: msg,
-      buttons: [
-        { label: 'Fermer', value: 'close' },
-        { label: covered ? 'Remettre non parcourue' : 'Marquer parcourue', value: 'toggle', primary: !covered, danger: covered }
-      ]
+      buttons: buttons
     }).then(function(choice){
       if(choice === 'toggle') toggleRoadCoverage(key);
+      else if(choice === 'rename') renameRoad(key, entry);
     });
+  }
+
+  // Renommage d'une route (admin uniquement), utile pour les nombreuses voies
+  // sans nom dans OpenStreetMap mais connues sur le terrain.
+  function renameRoad(key, entry){
+    var current = roadDisplayLabel(entry);
+    var newName = prompt('Nouveau nom pour cette route :', current);
+    if(newName === null) return; // annulé
+    newName = newName.trim();
+    if(!newName) return;
+    var e = roadCoverage[key] || { covered: false };
+    e.customName = newName;
+    roadCoverage[key] = e;
+    applyRoadCoverageStyling();
+    saveRoadCoverage()
+      .then(function(){ customAlert('Nom mis à jour : ' + newName); })
+      .catch(function(){ customAlert('Erreur lors de l\'enregistrement du nom.'); });
   }
 
   // Nom affiché d'une route : priorité au nom personnalisé enregistré
@@ -2274,8 +2277,6 @@
     document.getElementById('passwordChangeMsg').textContent = '';
     document.getElementById('newPassword').value = '';
     document.getElementById('newPasswordConfirm').value = '';
-    document.getElementById('newUserName').value = '';
-    document.getElementById('newUserPass').value = '';
     if(currentRole === 'admin') renderUserList();
     document.getElementById('accountModal').classList.remove('hidden');
   });
@@ -2809,37 +2810,6 @@
       });
     });
   }
-
-  document.getElementById('btnAddUser').addEventListener('click', async function(){
-    var uname = document.getElementById('newUserName').value.trim();
-    var upass = document.getElementById('newUserPass').value;
-    var ufirst = document.getElementById('newUserFirstName').value.trim();
-    var ulast = document.getElementById('newUserLastName').value.trim();
-    var err = document.getElementById('accountErr');
-    if(!uname || !upass || !ufirst || !ulast){ err.textContent = 'Prénom, nom, identifiant et mot de passe requis.'; return; }
-    if(upass.length < 4){ err.textContent = 'Le mot de passe doit faire au moins 4 caractères.'; return; }
-    try{
-      var resp = await fetch(usersApiUrl(), {
-        method: 'POST',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ username: uname, password: upass, firstName: ufirst, lastName: ulast, role: 'user' })
-      });
-      handleAuthResponse(resp);
-      var data = await resp.json();
-      if(!resp.ok){ err.textContent = data.error || 'Erreur lors de la création.'; return; }
-      document.getElementById('newUserName').value = '';
-      document.getElementById('newUserPass').value = '';
-      document.getElementById('newUserFirstName').value = '';
-      document.getElementById('newUserLastName').value = '';
-      err.style.color = 'var(--line)';
-      err.textContent = 'Utilisateur créé.';
-      await fetchUsers();
-      renderUserList();
-    } catch(e){
-      err.style.color = '';
-      err.textContent = 'Erreur lors de la création.';
-    }
-  });
 
   // ================= STOCKAGE PARTAGÉ (via Cloudflare Worker) =================
   var signalements = [];
