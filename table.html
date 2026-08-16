@@ -334,10 +334,17 @@
       return true;
     });
 
+    var QTY_ORDER = { '<10': 0, '10-50': 1, '50-500': 2, '>500': 3 };
+
     rows.sort(function(a, b){
       var va, vb;
       if(sortKey === 'traite'){ va = getTraite(a) ? 1 : 0; vb = getTraite(b) ? 1 : 0; }
+      else if(sortKey === 'sentToDept'){ va = getSentToDept(a) ? 1 : 0; vb = getSentToDept(b) ? 1 : 0; }
       else if(sortKey === 'classification'){ va = getClassification(a); vb = getClassification(b); }
+      else if(sortKey === 'quantity'){
+        va = a.quantity in QTY_ORDER ? QTY_ORDER[a.quantity] : -1;
+        vb = b.quantity in QTY_ORDER ? QTY_ORDER[b.quantity] : -1;
+      }
       else { va = a[sortKey] || ''; vb = b[sortKey] || ''; }
       if(va < vb) return -1 * sortDir;
       if(va > vb) return 1 * sortDir;
