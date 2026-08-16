@@ -114,6 +114,14 @@
       </select>
     </div>
     <div class="field">
+      <label>Département</label>
+      <select id="fDept">
+        <option value="">Tous</option>
+        <option value="non">Pas envoyé</option>
+        <option value="oui">Envoyé</option>
+      </select>
+    </div>
+    <div class="field">
       <label>Erronés</label>
       <select id="fErreur">
         <option value="non">Masquer les erronés</option>
@@ -135,6 +143,7 @@
           <th data-sort="date">Date</th>
           <th data-sort="classification">Classification</th>
           <th data-sort="traite">Traité</th>
+          <th data-sort="sentToDept">Département</th>
           <th data-sort="quantity">Quantité</th>
           <th>Note</th>
           <th data-sort="lastModifiedBy">Modifié par</th>
@@ -154,6 +163,8 @@
   <button id="btnBulkApplyClassif">Appliquer</button>
   <button id="btnBulkTraite">Marquer traité</button>
   <button id="btnBulkNonTraite">Marquer non traité</button>
+  <button id="btnBulkDeptSent">Envoyé au département</button>
+  <button id="btnBulkDeptNotSent">Pas envoyé au département</button>
   <button id="btnBulkExportSel">Exporter la sélection</button>
   <button id="btnBulkDelete" class="danger">Supprimer</button>
   <button id="btnBulkClear" style="margin-left:auto;background:transparent;">Annuler la sélection</button>
@@ -181,6 +192,7 @@
   function getClassification(s){ return s.classification || 'valide'; }
   function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
   function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
+  function getSentToDept(s){ return s.sentToDept === true; }
 
   var sessionToken = localStorage.getItem('ambroisie_token');
   var currentUser = localStorage.getItem('ambroisie_user');
@@ -300,6 +312,7 @@
     var fTraite = document.getElementById('fTraite').value;
     var fModBy = document.getElementById('fModifiedBy').value;
     var fOrigin = document.getElementById('fOrigin').value;
+    var fDept = document.getElementById('fDept').value;
     var fErreur = document.getElementById('fErreur').value;
 
     var rows = signalements.filter(function(s){
@@ -312,6 +325,8 @@
       if(fModBy && s.lastModifiedBy !== fModBy && s.createdBy !== fModBy) return false;
       if(fOrigin === 'citoyen' && !s.fromCitizenId) return false;
       if(fOrigin === 'direct' && s.fromCitizenId) return false;
+      if(fDept === 'oui' && !getSentToDept(s)) return false;
+      if(fDept === 'non' && getSentToDept(s)) return false;
       if(q){
         var hay = ((s.name||'') + ' ' + (s.refNumber||'') + ' ' + (s.note||'') + ' ' + (s.fromCitizenRefNumber||'')).toLowerCase();
         if(hay.indexOf(q) === -1) return false;
@@ -347,6 +362,7 @@
         '<td>' + (s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '—') + '</td>' +
         '<td><span class="pill" style="background:' + cls.color + '22;color:' + cls.color + ';">' + cls.label + '</span></td>' +
         '<td>' + (getTraite(s) ? '✅' : '—') + '</td>' +
+        '<td>' + (getClassification(s) === 'departement' ? (getSentToDept(s) ? '✅ Envoyé' : '⏳ Pas envoyé') : '—') + '</td>' +
         '<td>' + escapeHtml(qty) + '</td>' +
         '<td class="note-cell" title="' + escapeHtml(s.note || '') + '">' + escapeHtml(s.note || '') + '</td>' +
         '<td>' + escapeHtml(s.lastModifiedBy || s.createdBy || '—') + '</td>' +
@@ -429,6 +445,29 @@
   document.getElementById('btnBulkTraite').addEventListener('click', bulkSetTraite(true));
   document.getElementById('btnBulkNonTraite').addEventListener('click', bulkSetTraite(false));
 
+  function bulkSetDeptSent(val){
+    return async function(){
+      var ids = Object.keys(selected);
+      if(ids.length === 0) return;
+      if(!confirm('Marquer ' + ids.length + ' signalement(s) comme "' + (val ? 'envoyé au département' : 'pas envoyé au département') + '" ?')) return;
+      signalements.forEach(function(s){
+        if(selected[s.id]){
+          s.sentToDept = val;
+          s.lastModifiedBy = currentUser;
+          s.lastModifiedAt = new Date().toISOString();
+        }
+      });
+      try{
+        await saveData();
+        showToast(ids.length + ' signalement(s) mis à jour.');
+        selected = {};
+        renderTable();
+      } catch(e){ showToast('Erreur : ' + e.message); }
+    };
+  }
+  document.getElementById('btnBulkDeptSent').addEventListener('click', bulkSetDeptSent(true));
+  document.getElementById('btnBulkDeptNotSent').addEventListener('click', bulkSetDeptSent(false));
+
   document.getElementById('btnBulkDelete').addEventListener('click', async function(){
     var ids = Object.keys(selected);
     if(ids.length === 0) return;
@@ -479,7 +518,7 @@
     exportRows(rows, 'signalements-selection-' + dateStr + '.csv');
   });
 
-  ['fSearch','fClassif','fTraite','fModifiedBy','fOrigin','fErreur'].forEach(function(id){
+  ['fSearch','fClassif','fTraite','fModifiedBy','fOrigin','fDept','fErreur'].forEach(function(id){
     var el = document.getElementById(id);
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderTable);
   });
@@ -489,6 +528,7 @@
     document.getElementById('fTraite').value = '';
     document.getElementById('fModifiedBy').value = '';
     document.getElementById('fOrigin').value = '';
+    document.getElementById('fDept').value = '';
     document.getElementById('fErreur').value = 'non';
     renderTable();
   });
