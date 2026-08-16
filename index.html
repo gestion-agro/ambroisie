@@ -80,7 +80,7 @@
     padding:12px 14px calc(12px + env(safe-area-inset-bottom));
     display:flex;gap:10px;align-items:center;
   }
-  button.btn{
+  button.btn, a.btn{
     flex:1;
     font-size:14px;font-weight:800;
     border:2px solid var(--ink);
@@ -90,9 +90,10 @@
     color:var(--ink);
     cursor:pointer;
     display:flex;align-items:center;justify-content:center;gap:8px;
+    text-decoration:none;
   }
-  button.btn:active{transform:translateY(1px);}
-  button.btn.primary{
+  button.btn:active, a.btn:active{transform:translateY(1px);}
+  button.btn.primary, a.btn.primary{
     background:var(--line);color:#fff;border-color:var(--line);
   }
   button.btn.locate{
@@ -440,7 +441,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-a</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-b</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -601,12 +602,12 @@
     <div style="margin-top:6px;border-top:2px solid #ddd;padding-top:14px;">
       <h3 style="font-size:14px;">Vues en tableau</h3>
       <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Pour gérer plusieurs signalements ou routes d'un coup.</p>
-      <a href="table.html" class="btn" style="display:block;text-align:center;width:100%;margin-bottom:8px;text-decoration:none;box-sizing:border-box;">📋 Tableau des signalements</a>
-      <a href="roads.html" class="btn" style="display:block;text-align:center;width:100%;text-decoration:none;box-sizing:border-box;">🛣️ Tableau des routes</a>
+      <a href="table.html" class="btn" style="width:100%;margin-bottom:8px;box-sizing:border-box;">📋 Tableau des signalements</a>
+      <a href="roads.html" class="btn" style="width:100%;box-sizing:border-box;">🛣️ Tableau des routes</a>
     </div>
     <div id="adminSection" style="display:none;margin-top:18px;border-top:2px solid #ddd;padding-top:14px;">
       <h3>Gérer les utilisateurs (admin)</h3>
-      <a href="users.html" class="btn" style="display:block;text-align:center;width:100%;margin-bottom:10px;text-decoration:none;box-sizing:border-box;">👤 Ouvrir en page dédiée</a>
+      <a href="users.html" class="btn" style="width:100%;margin-bottom:10px;box-sizing:border-box;">👤 Ouvrir en page dédiée</a>
       <div id="userListContent"></div>
       <div class="field" style="margin-top:14px;display:flex;gap:10px;">
         <div style="flex:1;">
