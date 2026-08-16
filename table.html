@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Tableau des signalements — Belsentes</title>
+<style>
+  :root{
+    --ink:#1a2b1f; --line:#2f6b3a; --paper:#f4f1ea; --panel:#ffffff;
+    --muted:#5c6b5f; --danger:#a1352b; --amber:#c9781f;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);}
+  #topbar{
+    position:sticky;top:0;z-index:100;background:var(--panel);border-bottom:3px solid var(--ink);
+    padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  }
+  #topbar h1{font-size:16px;margin:0;}
+  #topbar a{color:var(--ink);text-decoration:none;font-size:13px;border:2px solid var(--ink);border-radius:8px;padding:6px 10px;}
+  #topbar a:hover{background:var(--ink);color:var(--paper);}
+  #main{padding:16px;max-width:1400px;margin:0 auto;}
+  .card{background:var(--panel);border:2px solid var(--ink);border-radius:12px;padding:14px 16px;margin-bottom:14px;}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+  .filters .field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;}
+  .filters input, .filters select{
+    font-size:14px;padding:8px 10px;border:2px solid #ccc;border-radius:8px;font-family:inherit;min-width:160px;
+  }
+  .filters input[type=text]{min-width:220px;}
+  #resultCount{font-size:12px;color:var(--muted);margin-left:auto;align-self:center;}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);}
+  thead th{
+    position:sticky;top:64px;background:#e4e0d4;border-bottom:2px solid var(--ink);
+    padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer;white-space:nowrap;
+  }
+  thead th:hover{background:#d8d4c6;}
+  tbody td{padding:7px 6px;border-bottom:1px solid #ddd;vertical-align:top;}
+  tbody tr:hover{background:#f7f5ee;}
+  tbody tr.touched{background:#fff7e0;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
+  .note-cell{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .note-cell:hover{white-space:normal;overflow:visible;}
+  #bulkBar{
+    position:sticky;bottom:0;background:var(--ink);color:#fff;padding:12px 16px;
+    display:none;align-items:center;gap:10px;flex-wrap:wrap;border-radius:12px 12px 0 0;margin-top:10px;
+  }
+  #bulkBar.show{display:flex;}
+  #bulkBar select, #bulkBar button{font-size:13px;padding:8px 12px;border-radius:8px;border:2px solid #fff;cursor:pointer;}
+  #bulkBar select{background:#fff;color:var(--ink);}
+  #bulkBar button{background:var(--line);color:#fff;font-weight:700;}
+  #bulkBar button.danger{background:var(--danger);}
+  #bulkBar .count{font-weight:700;}
+  .btn{font-size:13px;padding:8px 12px;border:2px solid var(--ink);border-radius:8px;background:var(--panel);cursor:pointer;font-weight:700;color:var(--ink);}
+  .btn.primary{background:var(--line);color:#fff;border-color:var(--line);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  #loginGate{
+    position:fixed;inset:0;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:14px;text-align:center;padding:30px;z-index:2000;
+  }
+  #loginGate.hidden{display:none;}
+  #loginGate a{color:#fff;background:var(--line);padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;}
+  #toast{
+    position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 18px;border-radius:8px;font-size:13px;z-index:1500;display:none;box-shadow:2px 3px 0 rgba(0,0,0,.3);
+  }
+  #toast.show{display:block;}
+</style>
+</head>
+<body>
+
+<div id="loginGate">
+  <h2>🌿 Tableau des signalements</h2>
+  <p>Vous devez être connecté(e) sur l'appli principale pour accéder à cette page.</p>
+  <a href="index.html">Aller me connecter</a>
+</div>
+
+<div id="topbar">
+  <h1>📋 Tableau des signalements <small id="whoami" style="font-weight:400;color:var(--muted);"></small></h1>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn" id="btnRefresh">↻ Actualiser</button>
+    <button class="btn" id="btnExportAll">📊 Exporter (filtré) en CSV</button>
+    <a href="index.html">← Retour à la carte</a>
+  </div>
+</div>
+
+<div id="main">
+  <div class="card filters">
+    <div class="field">
+      <label>Recherche</label>
+      <input type="text" id="fSearch" placeholder="Nom, n° SM, note...">
+    </div>
+    <div class="field">
+      <label>Classification</label>
+      <select id="fClassif"><option value="">Toutes</option></select>
+    </div>
+    <div class="field">
+      <label>Statut traité</label>
+      <select id="fTraite">
+        <option value="">Tous</option>
+        <option value="oui">Traité</option>
+        <option value="non">Non traité</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Modifié par</label>
+      <select id="fModifiedBy"><option value="">Tous</option></select>
+    </div>
+    <div class="field">
+      <label>Origine</label>
+      <select id="fOrigin">
+        <option value="">Toutes</option>
+        <option value="citoyen">Depuis un citoyen</option>
+        <option value="direct">Créé directement</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Erronés</label>
+      <select id="fErreur">
+        <option value="non">Masquer les erronés</option>
+        <option value="tous">Tous (avec erronés)</option>
+        <option value="oui">Erronés seulement</option>
+      </select>
+    </div>
+    <button class="btn" id="btnResetFilters">✕ Réinitialiser</button>
+    <div id="resultCount"></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table id="mainTable">
+      <thead>
+        <tr>
+          <th style="width:30px;"><input type="checkbox" id="chkAll"></th>
+          <th data-sort="refNumber">N° SM</th>
+          <th data-sort="name">Nom</th>
+          <th data-sort="date">Date</th>
+          <th data-sort="classification">Classification</th>
+          <th data-sort="traite">Traité</th>
+          <th data-sort="quantity">Quantité</th>
+          <th>Note</th>
+          <th data-sort="lastModifiedBy">Modifié par</th>
+          <th data-sort="lastModifiedAt">Le</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="bulkBar">
+  <span class="count"><span id="selCount">0</span> sélectionné(s)</span>
+  <select id="bulkClassif">
+    <option value="">— Changer la classification —</option>
+  </select>
+  <button id="btnBulkApplyClassif">Appliquer</button>
+  <button id="btnBulkTraite">Marquer traité</button>
+  <button id="btnBulkNonTraite">Marquer non traité</button>
+  <button id="btnBulkExportSel">Exporter la sélection</button>
+  <button id="btnBulkDelete" class="danger">Supprimer</button>
+  <button id="btnBulkClear" style="margin-left:auto;background:transparent;">Annuler la sélection</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var CONFIG = {
+    WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements"
+  };
+
+  var CLASSIFICATIONS = {
+    'valide':        { label: 'Validé',           color: '#2f6b3a' },
+    'en_cours':      { label: 'En cours',         color: '#c98a1f' },
+    'doublon':       { label: 'Doublon',          color: '#5c6bd6' },
+    'pas_ambroisie': { label: "Pas d'ambroisie",  color: '#8a8a8a' },
+    'departement':   { label: 'Département (RD)', color: '#b5651d' }
+  };
+  var QTY_LABELS = { '<10':'Moins de 10 plants', '10-50':'10 à 50 plants', '50-500':'50 à 500 plants', '>500':'Plus de 500 plants' };
+
+  function getClassification(s){ return s.classification || 'valide'; }
+  function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
+  function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
+
+  var sessionToken = localStorage.getItem('ambroisie_token');
+  var currentUser = localStorage.getItem('ambroisie_user');
+  var currentRole = localStorage.getItem('ambroisie_role');
+
+  if(!sessionToken || !currentUser){
+    document.getElementById('loginGate').classList.remove('hidden');
+  } else {
+    document.getElementById('loginGate').classList.add('hidden');
+    document.getElementById('whoami').textContent = '— connecté(e) en tant que ' + currentUser;
+  }
+
+  function authHeaders(extra){
+    var h = { 'Authorization': 'Bearer ' + sessionToken };
+    if(extra) Object.assign(h, extra);
+    return h;
+  }
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2500);
+  }
+
+  function apiUrl(path){ return CONFIG.WORKER_URL.replace('/signalements', path); }
+
+  var signalements = [];
+  var currentSha = null;
+  var selected = {}; // id -> true
+
+  async function loadData(){
+    try{
+      var resp = await fetch(CONFIG.WORKER_URL, { method: 'GET', headers: authHeaders() });
+      if(resp.status === 401){
+        document.getElementById('loginGate').classList.remove('hidden');
+        return;
+      }
+      if(!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      signalements = data.items || [];
+      currentSha = data.sha || null;
+      populateFilterOptions();
+      renderTable();
+    } catch(e){
+      showToast('Erreur de chargement : ' + e.message);
+    }
+  }
+
+  async function saveData(){
+    // On relit le sha juste avant d'écrire pour éviter d'écraser une
+    // modification faite entre-temps depuis l'appli principale.
+    var getResp = await fetch(CONFIG.WORKER_URL, { method: 'GET', headers: authHeaders() });
+    var getData = await getResp.json();
+    currentSha = getData.sha || null;
+
+    var resp = await fetch(CONFIG.WORKER_URL, {
+      method: 'PUT',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ items: signalements, sha: currentSha })
+    });
+    if(!resp.ok){
+      var errData = await resp.json().catch(function(){ return {}; });
+      throw new Error(errData.error || ('HTTP ' + resp.status));
+    }
+    var data = await resp.json();
+    currentSha = data.sha;
+  }
+
+  function populateFilterOptions(){
+    var classifSel = document.getElementById('fClassif');
+    if(classifSel.options.length <= 1){
+      Object.keys(CLASSIFICATIONS).forEach(function(k){
+        var opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = CLASSIFICATIONS[k].label;
+        classifSel.appendChild(opt);
+      });
+    }
+    var bulkSel = document.getElementById('bulkClassif');
+    if(bulkSel.options.length <= 1){
+      Object.keys(CLASSIFICATIONS).forEach(function(k){
+        var opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = CLASSIFICATIONS[k].label;
+        bulkSel.appendChild(opt);
+      });
+    }
+    var modSel = document.getElementById('fModifiedBy');
+    var names = {};
+    signalements.forEach(function(s){
+      if(s.lastModifiedBy) names[s.lastModifiedBy] = true;
+      if(s.createdBy) names[s.createdBy] = true;
+    });
+    var existing = Array.from(modSel.options).map(function(o){ return o.value; });
+    Object.keys(names).sort().forEach(function(n){
+      if(existing.indexOf(n) === -1){
+        var opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        modSel.appendChild(opt);
+      }
+    });
+  }
+
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  var sortKey = 'date';
+  var sortDir = -1;
+
+  function getFilteredSorted(){
+    var q = document.getElementById('fSearch').value.trim().toLowerCase();
+    var fClassif = document.getElementById('fClassif').value;
+    var fTraite = document.getElementById('fTraite').value;
+    var fModBy = document.getElementById('fModifiedBy').value;
+    var fOrigin = document.getElementById('fOrigin').value;
+    var fErreur = document.getElementById('fErreur').value;
+
+    var rows = signalements.filter(function(s){
+      var erreur = getErreur(s);
+      if(fErreur === 'non' && erreur) return false;
+      if(fErreur === 'oui' && !erreur) return false;
+      if(fClassif && getClassification(s) !== fClassif) return false;
+      if(fTraite === 'oui' && !getTraite(s)) return false;
+      if(fTraite === 'non' && getTraite(s)) return false;
+      if(fModBy && s.lastModifiedBy !== fModBy && s.createdBy !== fModBy) return false;
+      if(fOrigin === 'citoyen' && !s.fromCitizenId) return false;
+      if(fOrigin === 'direct' && s.fromCitizenId) return false;
+      if(q){
+        var hay = ((s.name||'') + ' ' + (s.refNumber||'') + ' ' + (s.note||'') + ' ' + (s.fromCitizenRefNumber||'')).toLowerCase();
+        if(hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    rows.sort(function(a, b){
+      var va, vb;
+      if(sortKey === 'traite'){ va = getTraite(a) ? 1 : 0; vb = getTraite(b) ? 1 : 0; }
+      else if(sortKey === 'classification'){ va = getClassification(a); vb = getClassification(b); }
+      else { va = a[sortKey] || ''; vb = b[sortKey] || ''; }
+      if(va < vb) return -1 * sortDir;
+      if(va > vb) return 1 * sortDir;
+      return 0;
+    });
+    return rows;
+  }
+
+  function renderTable(){
+    var rows = getFilteredSorted();
+    document.getElementById('resultCount').textContent = rows.length + ' signalement(s) affiché(s) sur ' + signalements.length;
+
+    var tbody = document.getElementById('tableBody');
+    tbody.innerHTML = rows.map(function(s){
+      var cls = CLASSIFICATIONS[getClassification(s)] || CLASSIFICATIONS['valide'];
+      var qty = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : '—';
+      var checked = selected[s.id] ? 'checked' : '';
+      return '<tr data-id="' + s.id + '">' +
+        '<td><input type="checkbox" class="rowChk" data-id="' + s.id + '" ' + checked + '></td>' +
+        '<td><b>' + escapeHtml(s.refNumber || '—') + '</b></td>' +
+        '<td>' + escapeHtml(s.name || '') + '</td>' +
+        '<td>' + (s.date ? new Date(s.date).toLocaleDateString('fr-FR') : '—') + '</td>' +
+        '<td><span class="pill" style="background:' + cls.color + '22;color:' + cls.color + ';">' + cls.label + '</span></td>' +
+        '<td>' + (getTraite(s) ? '✅' : '—') + '</td>' +
+        '<td>' + escapeHtml(qty) + '</td>' +
+        '<td class="note-cell" title="' + escapeHtml(s.note || '') + '">' + escapeHtml(s.note || '') + '</td>' +
+        '<td>' + escapeHtml(s.lastModifiedBy || s.createdBy || '—') + '</td>' +
+        '<td>' + (s.lastModifiedAt ? new Date(s.lastModifiedAt).toLocaleString('fr-FR') : (s.createdAt ? new Date(s.createdAt).toLocaleString('fr-FR') : '—')) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    tbody.querySelectorAll('.rowChk').forEach(function(chk){
+      chk.addEventListener('change', function(){
+        var id = chk.getAttribute('data-id');
+        if(chk.checked) selected[id] = true; else delete selected[id];
+        updateBulkBar();
+      });
+    });
+    updateBulkBar();
+  }
+
+  function updateBulkBar(){
+    var count = Object.keys(selected).length;
+    document.getElementById('selCount').textContent = count;
+    document.getElementById('bulkBar').classList.toggle('show', count > 0);
+  }
+
+  document.getElementById('chkAll').addEventListener('change', function(){
+    var rows = getFilteredSorted();
+    if(this.checked){
+      rows.forEach(function(s){ selected[s.id] = true; });
+    } else {
+      rows.forEach(function(s){ delete selected[s.id]; });
+    }
+    renderTable();
+  });
+
+  document.getElementById('btnBulkClear').addEventListener('click', function(){
+    selected = {};
+    renderTable();
+  });
+
+  document.getElementById('btnBulkApplyClassif').addEventListener('click', async function(){
+    var val = document.getElementById('bulkClassif').value;
+    if(!val){ showToast('Choisissez une classification à appliquer.'); return; }
+    var ids = Object.keys(selected);
+    if(ids.length === 0) return;
+    if(!confirm('Appliquer la classification "' + CLASSIFICATIONS[val].label + '" à ' + ids.length + ' signalement(s) ?')) return;
+    signalements.forEach(function(s){
+      if(selected[s.id]){
+        s.classification = val;
+        s.lastModifiedBy = currentUser;
+        s.lastModifiedAt = new Date().toISOString();
+      }
+    });
+    try{
+      await saveData();
+      showToast(ids.length + ' signalement(s) mis à jour.');
+      selected = {};
+      renderTable();
+    } catch(e){ showToast('Erreur : ' + e.message); }
+  });
+
+  function bulkSetTraite(val){
+    return async function(){
+      var ids = Object.keys(selected);
+      if(ids.length === 0) return;
+      if(!confirm('Marquer ' + ids.length + ' signalement(s) comme "' + (val ? 'traité' : 'non traité') + '" ?')) return;
+      signalements.forEach(function(s){
+        if(selected[s.id]){
+          s.traite = val;
+          s.lastModifiedBy = currentUser;
+          s.lastModifiedAt = new Date().toISOString();
+        }
+      });
+      try{
+        await saveData();
+        showToast(ids.length + ' signalement(s) mis à jour.');
+        selected = {};
+        renderTable();
+      } catch(e){ showToast('Erreur : ' + e.message); }
+    };
+  }
+  document.getElementById('btnBulkTraite').addEventListener('click', bulkSetTraite(true));
+  document.getElementById('btnBulkNonTraite').addEventListener('click', bulkSetTraite(false));
+
+  document.getElementById('btnBulkDelete').addEventListener('click', async function(){
+    var ids = Object.keys(selected);
+    if(ids.length === 0) return;
+    if(currentRole !== 'admin'){ showToast('Seul un administrateur peut supprimer.'); return; }
+    if(!confirm('Supprimer DÉFINITIVEMENT ' + ids.length + ' signalement(s) ? Cette action est irréversible.')) return;
+    signalements = signalements.filter(function(s){ return !selected[s.id]; });
+    try{
+      await saveData();
+      showToast(ids.length + ' signalement(s) supprimé(s).');
+      selected = {};
+      renderTable();
+    } catch(e){ showToast('Erreur : ' + e.message); }
+  });
+
+  function csvEscape(val){
+    if(val === null || val === undefined) return '';
+    return '"' + String(val).replace(/"/g, '""') + '"';
+  }
+
+  function exportRows(rows, filename){
+    var cols = ['refNumber','date','name','lat','lon','quantity','classification','traite','isErreur','note','fromCitizenRefNumber','createdBy','createdAt','lastModifiedBy','lastModifiedAt'];
+    var header = cols.join(',');
+    var lines = rows.map(function(s){
+      return [
+        s.refNumber||'', s.date? new Date(s.date).toLocaleString('fr-FR'):'', s.name||'', s.lat, s.lon,
+        s.quantity? (QTY_LABELS[s.quantity]||s.quantity):'', (CLASSIFICATIONS[getClassification(s)]||{}).label||'',
+        getTraite(s)?'Oui':'Non', getErreur(s)?'Oui':'Non', s.note||'', s.fromCitizenRefNumber||'',
+        s.createdBy||'', s.createdAt? new Date(s.createdAt).toLocaleString('fr-FR'):'',
+        s.lastModifiedBy||'', s.lastModifiedAt? new Date(s.lastModifiedAt).toLocaleString('fr-FR'):''
+      ].map(csvEscape).join(',');
+    });
+    var csv = '\uFEFF' + header + '\n' + lines.join('\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }
+
+  document.getElementById('btnExportAll').addEventListener('click', function(){
+    var dateStr = new Date().toISOString().slice(0,10);
+    exportRows(getFilteredSorted(), 'signalements-filtres-' + dateStr + '.csv');
+  });
+  document.getElementById('btnBulkExportSel').addEventListener('click', function(){
+    var rows = signalements.filter(function(s){ return selected[s.id]; });
+    var dateStr = new Date().toISOString().slice(0,10);
+    exportRows(rows, 'signalements-selection-' + dateStr + '.csv');
+  });
+
+  ['fSearch','fClassif','fTraite','fModifiedBy','fOrigin','fErreur'].forEach(function(id){
+    var el = document.getElementById(id);
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderTable);
+  });
+  document.getElementById('btnResetFilters').addEventListener('click', function(){
+    document.getElementById('fSearch').value = '';
+    document.getElementById('fClassif').value = '';
+    document.getElementById('fTraite').value = '';
+    document.getElementById('fModifiedBy').value = '';
+    document.getElementById('fOrigin').value = '';
+    document.getElementById('fErreur').value = 'non';
+    renderTable();
+  });
+  document.getElementById('fErreur').value = 'non';
+
+  document.querySelectorAll('th[data-sort]').forEach(function(th){
+    th.addEventListener('click', function(){
+      var key = th.getAttribute('data-sort');
+      if(sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; }
+      renderTable();
+    });
+  });
+
+  document.getElementById('btnRefresh').addEventListener('click', loadData);
+
+  if(sessionToken && currentUser) loadData();
+})();
+</script>
+</body>
+</html>
