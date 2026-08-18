@@ -8,7 +8,7 @@
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.sheetjs.com;
   style-src 'self' 'unsafe-inline' https://unpkg.com;
-  img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com;
+  img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com https://data.geopf.fr;
   connect-src 'self' https://ambroisie-belsentes-api.clement-thieuleux.workers.dev https://overpass-api.de https://overpass.kumi.systems https://overpass.openstreetmap.ru;
   frame-ancestors 'none';
   base-uri 'self';
@@ -329,6 +329,7 @@
   #btnArsListToggle.hidden{ display:none; }
   #arsTopbar.hidden{ display:none !important; }
   #drawRoadBanner.hidden{ display:none !important; }
+  #chkUnnamedRoadsRow.hidden{ display:none !important; }
   #arsLegend.hidden{ display:none !important; }
   #btnAccount{
     position:fixed;left:14px;bottom:88px;z-index:1001;
@@ -442,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-a</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -472,6 +473,8 @@
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsPath" style="margin:0;"> <span class="sw" style="background:#a8a8a8"></span> Chemins de terre/privés (indicatif)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkCadastre" style="margin:0;"> <span class="sw" style="border:2px solid #444;background:none;width:12px;height:12px;"></span> Cadastre (parcelles)</label></div>
+    <div id="chkUnnamedRoadsRow" class="hidden"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkUnnamedRoads" style="margin:0;"> <span class="sw" style="background:#1c6fd9"></span> Routes sans nom (admin)</label></div>
     <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
     <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
     <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
@@ -812,6 +815,11 @@
   var roadsLayerRD = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var roadsLayerRN = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var roadsLayerPath = L.layerGroup(); // chemins de terre/privés, indicatif seulement, désactivé par défaut
+  // Cadastre officiel IGN/Géoportail (parcelles), gratuit et sans clé,
+  // superposé à la carte — désactivé par défaut (assez lourd visuellement).
+  var cadastreLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {
+    maxNativeZoom: 19, maxZoom: 22, opacity: 0.75, attribution: 'Cadastre © IGN/Géoportail'
+  });
   var trackLayer = L.layerGroup().addTo(map);
   var otherTracksLayer = L.layerGroup().addTo(map);
   var userMarker = null;
@@ -1619,12 +1627,23 @@
     });
   }
 
+  var showUnnamedRoads = false; // activable par un admin, pour repérer les routes à nommer
+
+  function isRoadUnnamed(entry){
+    var custom = roadCoverage[entry.key] && roadCoverage[entry.key].customName;
+    return !custom && entry.label.indexOf('Voie (') === 0;
+  }
+
   function applyRoadCoverageStyling(){
     Object.keys(roadsIndex).forEach(function(key){
       var entry = roadsIndex[key];
       var covered = isRoadCovered(key);
       entry.polylines.forEach(function(line){
-        if(!covered){
+        if(showUnnamedRoads && currentRole === 'admin' && isRoadUnnamed(entry)){
+          // Mise en évidence prioritaire : repérer d'un coup d'œil les routes
+          // sans nom à corriger, peu importe leur statut parcouru/classe.
+          line.setStyle({ color:'#1c6fd9', weight: Math.max(entry.baseStyle.weight, 4), opacity:0.9, dashArray: null });
+        } else if(!covered){
           line.setStyle(entry.baseStyle);
         } else if(entry.roadClass === 'PATH'){
           // Chemin de terre/privé marqué parcouru : bleu pointillé, distinct
@@ -2568,9 +2587,43 @@
   }
 
   // ================= COMPTE / ADMIN =================
+  // ================= PRÉFÉRENCES D'AFFICHAGE (par conseiller, par appareil) =================
+  // Mémorise les calques/filtres activés ou désactivés, pour les retrouver
+  // tels quels à la prochaine connexion — évite de tout recocher à chaque fois.
+  var PREF_CHECKBOXES = [
+    'chkRoadsRC','chkRoadsRD','chkRoadsRN','chkRoadsPath','chkCadastre',
+    'chkSigATraiter','chkSigTraite','chkSigDoublon','chkSigPasAmbroisie',
+    'chkSigDeptNonEnvoye','chkSigDeptEnvoye','chkSigCitoyen'
+  ];
+  function prefsKey(){ return 'ambroisie_prefs_' + (currentUser || 'anon'); }
+  function savePreferences(){
+    var prefs = {};
+    PREF_CHECKBOXES.forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) prefs[id] = el.checked;
+    });
+    try{ localStorage.setItem(prefsKey(), JSON.stringify(prefs)); } catch(e){}
+  }
+  function restorePreferences(){
+    var raw;
+    try{ raw = localStorage.getItem(prefsKey()); } catch(e){ return; }
+    if(!raw) return;
+    var prefs;
+    try{ prefs = JSON.parse(raw); } catch(e){ return; }
+    PREF_CHECKBOXES.forEach(function(id){
+      if(prefs[id] === undefined) return;
+      var el = document.getElementById(id);
+      if(el && el.checked !== prefs[id]){
+        el.checked = prefs[id];
+        el.dispatchEvent(new Event('change'));
+      }
+    });
+  }
+
   function setupAccountUI(){
     document.getElementById('accountWhoami').textContent = currentUser + (currentRole === 'admin' ? ' (administrateur)' : '');
     document.getElementById('adminSection').style.display = currentRole === 'admin' ? 'block' : 'none';
+    document.getElementById('chkUnnamedRoadsRow').classList.toggle('hidden', currentRole !== 'admin');
     fetchUsers().then(function(){
       if(currentRole === 'admin') renderUserList();
     }).catch(function(e){ console.warn('Erreur chargement comptes', e); });
@@ -2578,6 +2631,7 @@
     startSignalSync();
     startCitizenSync();
     loadRoadCoverage();
+    restorePreferences();
   }
 
   document.getElementById('btnAccount').addEventListener('click', function(){
@@ -4162,15 +4216,29 @@
 
   document.getElementById('chkRoadsRC').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerRC); } else { map.removeLayer(roadsLayerRC); }
+    savePreferences();
   });
   document.getElementById('chkRoadsRD').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerRD); } else { map.removeLayer(roadsLayerRD); }
+    savePreferences();
   });
   document.getElementById('chkRoadsRN').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerRN); } else { map.removeLayer(roadsLayerRN); }
+    savePreferences();
   });
   document.getElementById('chkRoadsPath').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerPath); } else { map.removeLayer(roadsLayerPath); }
+    savePreferences();
+  });
+
+  document.getElementById('chkCadastre').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(cadastreLayer); } else { map.removeLayer(cadastreLayer); }
+    savePreferences();
+  });
+
+  document.getElementById('chkUnnamedRoads').addEventListener('change', function(e){
+    showUnnamedRoads = e.target.checked;
+    applyRoadCoverageStyling();
   });
 
   [
@@ -4186,6 +4254,7 @@
       signalVisibility[pair[1]] = e.target.checked;
       renderSignalMarkers();
       renderCitizenMarkers();
+      savePreferences();
     });
   });
 
