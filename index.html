@@ -441,7 +441,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-d</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-e</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -609,6 +609,11 @@
       <h3>Gérer les utilisateurs (admin)</h3>
       <a href="users.html" class="btn" style="width:100%;margin-bottom:10px;box-sizing:border-box;">👤 Ouvrir en page dédiée (créer/supprimer)</a>
       <div id="userListContent"></div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;">Classification des routes (cadastre)</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Passe route par route, une carte avec le cadastre en fond, pour corriger RC/RD/RN/privé une bonne fois pour toutes.</p>
+        <a href="classify.html" class="btn" style="width:100%;box-sizing:border-box;">🗂️ Classifier route par route</a>
+      </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;">Numéros de référence (SM)</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Attribue un numéro (SM-AAMMJJ-XXXX) à tous les signalements existants qui n'en ont pas encore.</p>
@@ -893,7 +898,8 @@
             by: item.by, at: item.at,
             customName: item.customName || null,
             customClass: item.customClass || null,
-            hidden: !!item.hidden
+            hidden: !!item.hidden,
+            reviewed: !!item.reviewed
           };
         });
         applyRoadClassOverrides();
@@ -907,7 +913,7 @@
       var e = roadCoverage[key];
       return {
         key: key, covered: !!e.covered, by: e.by, at: e.at,
-        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden
+        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden, reviewed: !!e.reviewed
       };
     });
     return fetch(roadCoverageApiUrl(), {
