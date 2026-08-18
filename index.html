@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-a</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-b</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -920,7 +920,8 @@
             reviewed: !!item.reviewed,
             latlngsList: item.latlngsList || null,
             label: item.label || null,
-            source: item.source || 'osm'
+            source: item.source || 'osm',
+            originalClass: item.originalClass || null
           };
         });
         // Si OpenStreetMap n'a jamais répondu (aucune route affichée), on
@@ -944,7 +945,7 @@
       return {
         key: key, covered: !!e.covered, by: e.by, at: e.at,
         customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden, reviewed: !!e.reviewed,
-        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm'
+        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm', originalClass: e.originalClass || null
       };
     });
     return fetch(roadCoverageApiUrl(), {
@@ -967,9 +968,10 @@
       var cov = roadCoverage[key];
       if(!cov.latlngsList || !cov.latlngsList.length) return;
       found = true;
-      var roadClass = cov.customClass || 'RC'; // classe d'origine perdue si jamais reconstruit sans OSM ; l'admin peut reclasser si besoin
+      var originalClass = cov.originalClass || 'RC';
+      var roadClass = cov.customClass || originalClass;
       var style = roadStyle(null, roadClass);
-      var entry = { key: key, label: cov.customName || cov.label || key, roadClass: roadClass, originalClass: roadClass, polylines: [], baseStyle: style, latlngsList: cov.latlngsList };
+      var entry = { key: key, label: cov.customName || cov.label || key, roadClass: roadClass, originalClass: originalClass, polylines: [], baseStyle: style, latlngsList: cov.latlngsList };
       cov.latlngsList.forEach(function(latlngs){
         var line = L.polyline(latlngs, style);
         var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
@@ -1737,10 +1739,14 @@
       var entry = roadsIndex[key];
       var cov = roadCoverage[key];
       if(!cov){ cov = {}; roadCoverage[key] = cov; }
-      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList)){
+      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList) || cov.originalClass !== entry.originalClass){
         cov.latlngsList = entry.latlngsList;
         cov.label = entry.label;
         cov.source = cov.source || 'osm';
+        // Indispensable pour reconstruire correctement RD/RN/privé quand on
+        // repart uniquement de la mémoire (sans repasser par OSM) : sans ça,
+        // toutes les routes retombaient par défaut en "Communale".
+        cov.originalClass = entry.originalClass;
         changed = true;
       }
     });
