@@ -441,7 +441,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-c</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-16-d</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -883,15 +883,20 @@
         roadCoverageSha = data.sha || null;
         roadCoverage = {};
         (data.items || []).forEach(function(item){
-          // Compatibilité avec l'ancien format : la simple présence d'une
-          // entrée signifiait "parcourue". Si le champ "covered" n'existe
-          // pas, on considère donc que c'était le cas.
-          roadCoverage[item.key] = {
+          // Compatibilité : anciennes clés au format "RC::Nom" migrées vers la
+          // nouvelle clé stable "Nom" (sans la classification). Compatibilité
+          // aussi avec l'ancien format où la simple présence d'une entrée
+          // signifiait "parcourue" (avant l'ajout du champ "covered").
+          var key = legacyKeySuffix(item.key);
+          roadCoverage[key] = {
             covered: item.covered !== undefined ? item.covered : true,
             by: item.by, at: item.at,
-            customName: item.customName || null
+            customName: item.customName || null,
+            customClass: item.customClass || null,
+            hidden: !!item.hidden
           };
         });
+        applyRoadClassOverrides();
         applyRoadCoverageStyling();
       })
       .catch(function(e){ console.warn('Erreur chargement couverture des routes', e); });
@@ -900,7 +905,10 @@
   function saveRoadCoverage(){
     var items = Object.keys(roadCoverage).map(function(key){
       var e = roadCoverage[key];
-      return { key: key, covered: !!e.covered, by: e.by, at: e.at, customName: e.customName || null };
+      return {
+        key: key, covered: !!e.covered, by: e.by, at: e.at,
+        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden
+      };
     });
     return fetch(roadCoverageApiUrl(), {
       method: 'PUT',
@@ -924,20 +932,27 @@
 
   // Ouvre une petite boîte de dialogue au clic sur une route de la carte,
   // pour la marquer parcourue sans avoir à chercher dans la liste complète.
+  function roadClassLabel(cls){
+    return cls === 'RD' ? 'Départementale (RD)' : (cls === 'RN' ? 'Nationale (RN)' : (cls === 'PATH' ? 'Chemin de terre / privé' : 'Communale (RC)'));
+  }
+
   function openRoadQuickView(key){
     var entry = roadsIndex[key];
     if(!entry) return;
     var covered = isRoadCovered(key);
     var info = roadCoverage[key];
-    var classLabel = entry.roadClass === 'RD' ? 'Départementale (RD)' : (entry.roadClass === 'RN' ? 'Nationale (RN)' : (entry.roadClass === 'PATH' ? 'Chemin de terre / privé (indicatif)' : 'Communale (RC)'));
-    var msg = classLabel + '\nStatut : ' + (covered ? 'Parcourue' : 'Non parcourue') +
+    var override = roadCoverage[key] && roadCoverage[key].customClass;
+    var msg = roadClassLabel(entry.roadClass) + (override ? ' (corrigé manuellement)' : '') +
+      '\nStatut : ' + (covered ? 'Parcourue' : 'Non parcourue') +
       (covered && info ? '\nPar ' + (info.by || '?') + ' le ' + new Date(info.at).toLocaleString('fr-FR') : '');
     var buttons = [
       { label: 'Fermer', value: 'close' },
       { label: covered ? 'Remettre non parcourue' : 'Marquer parcourue', value: 'toggle', primary: !covered, danger: covered }
     ];
     if(currentRole === 'admin'){
-      buttons.splice(1, 0, { label: '✏️ Modifier le nom', value: 'rename' });
+      buttons.splice(1, 0, { label: '✏️ Nom', value: 'rename' });
+      buttons.splice(2, 0, { label: '🔄 Classification', value: 'reclass' });
+      buttons.splice(3, 0, { label: '🗑️ Masquer', value: 'hide', danger: true });
     }
     showModal({
       title: roadDisplayLabel(entry),
@@ -946,6 +961,8 @@
     }).then(function(choice){
       if(choice === 'toggle') toggleRoadCoverage(key);
       else if(choice === 'rename') renameRoad(key, entry);
+      else if(choice === 'reclass') reclassifyRoad(key, entry);
+      else if(choice === 'hide') hideRoad(key, entry);
     });
   }
 
@@ -966,6 +983,49 @@
       .catch(function(){ customAlert('Erreur lors de l\'enregistrement du nom.'); });
   }
 
+  // Reclassification manuelle (admin) : utile car les données OSM ne
+  // correspondent pas toujours au cadastre réel (route dite communale mais
+  // en fait privée, ou l'inverse). La correction est mémorisée durablement.
+  function reclassifyRoad(key, entry){
+    showModal({
+      title: 'Changer la classification',
+      message: roadDisplayLabel(entry) + '\nClassification actuelle : ' + roadClassLabel(entry.roadClass),
+      buttons: [
+        { label: 'Annuler', value: null },
+        { label: 'Communale (RC)', value: 'RC', primary: entry.roadClass === 'RC' },
+        { label: 'Départementale (RD)', value: 'RD', primary: entry.roadClass === 'RD' },
+        { label: 'Nationale (RN)', value: 'RN', primary: entry.roadClass === 'RN' },
+        { label: 'Chemin de terre / privé', value: 'PATH', primary: entry.roadClass === 'PATH' }
+      ]
+    }).then(function(newClass){
+      if(!newClass) return;
+      var e = roadCoverage[key] || { covered: false };
+      // Si on remet la classe d'origine (celle d'OSM), on retire la
+      // correction plutôt que de garder une correction inutile.
+      e.customClass = (newClass === entry.originalClass) ? null : newClass;
+      roadCoverage[key] = e;
+      applyRoadClassOverrides();
+      applyRoadCoverageStyling();
+      saveRoadCoverage()
+        .then(function(){ customAlert('Classification mise à jour : ' + roadClassLabel(newClass)); })
+        .catch(function(){ customAlert('Erreur lors de l\'enregistrement.'); });
+    });
+  }
+
+  // Masque une route qui n'a rien à faire sur la carte (doublon, erreur de
+  // tracé...) sans la supprimer d'OpenStreetMap — juste ne plus l'afficher ici.
+  function hideRoad(key, entry){
+    customConfirm('Masquer "' + roadDisplayLabel(entry) + '" ? Elle disparaîtra de la carte et du suivi des routes (récupérable depuis la page dédiée "Tableau des routes").', 'Masquer cette route')
+      .then(function(ok){
+        if(!ok) return;
+        var e = roadCoverage[key] || { covered: false };
+        e.hidden = true;
+        roadCoverage[key] = e;
+        applyRoadClassOverrides();
+        saveRoadCoverage().catch(function(){ /* déjà appliqué visuellement */ });
+      });
+  }
+
   // Nom affiché d'une route : priorité au nom personnalisé enregistré
   // manuellement (utile pour les nombreuses voies sans nom dans OSM), sinon
   // le nom OSM d'origine.
@@ -977,6 +1037,9 @@
   function renderRoadCoverageList(filterText){
     var box = document.getElementById('roadCoverageContent');
     var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; })
+      // Les routes masquées manuellement (corrections d'erreurs) n'apparaissent
+      // jamais ici — récupérables depuis la page dédiée "Tableau des routes".
+      .filter(function(e){ return !(roadCoverage[e.key] && roadCoverage[e.key].hidden); })
       // Les chemins de terre/privés n'apparaissent ici que s'ils ont été
       // explicitement marqués "parcourus" depuis la carte — sinon ils
       // encombreraient la liste sans concerner l'arrachage mairie.
@@ -1356,13 +1419,66 @@
   var roadsIndex = {}; // clé -> { key, label, roadClass, polylines: [...] }
   var roadCoverage = {}; // clé -> { by, at }
 
-  function roadKeyFor(tags, elId, roadClass){
-    if(tags.name) return roadClass + '::' + tags.name;
-    if(tags.ref) return roadClass + '::' + tags.ref;
-    return roadClass + '::way' + elId;
+  // La clé n'inclut plus la classification (RC/RD/RN/PATH) : elle doit rester
+  // stable même si on reclasse une route manuellement, sinon on perdrait le
+  // lien avec son historique (nom personnalisé, statut parcouru...).
+  function roadKeyFor(tags, elId){
+    if(tags.name) return tags.name;
+    if(tags.ref) return tags.ref;
+    return 'way' + elId;
+  }
+  // Ancien format de clé (avant cette correction), pour migrer en douceur les
+  // données déjà enregistrées sans rien perdre.
+  function legacyKeySuffix(key){
+    return key.replace(/^(RC|RD|RN|PATH)::/, '');
   }
 
   function isRoadCovered(key){ return !!(roadCoverage[key] && roadCoverage[key].covered); }
+
+  // Style simplifié utilisé uniquement quand une route est reclassée
+  // manuellement (sans le détail par sous-type de la fonction roadStyle
+  // d'origine, qui dépend du tag OSM "highway" qu'on n'a pas à recalculer ici).
+  function styleForClass(roadClass){
+    if(roadClass === 'RD') return { color:'#c9781f', weight:5, opacity:0.85, dashArray:null };
+    if(roadClass === 'RN') return { color:'#8a3fbf', weight:6, opacity:0.85, dashArray:null };
+    if(roadClass === 'PATH') return { color:'#a8a8a8', weight:2, opacity:0.85, dashArray:'1 6' };
+    return { color:'#2f6b3a', weight:4, opacity:0.85, dashArray:null };
+  }
+  function layerForClass(roadClass){
+    if(roadClass === 'RD') return roadsLayerRD;
+    if(roadClass === 'RN') return roadsLayerRN;
+    if(roadClass === 'PATH') return roadsLayerPath;
+    return roadsLayerRC;
+  }
+
+  // Applique les corrections manuelles (reclassification, masquage) faites
+  // par un admin — utile car les données OpenStreetMap sont parfois fausses
+  // par rapport au cadastre réel (route dite "communale" alors qu'elle est
+  // privée, ou l'inverse). On mémorise la correction plutôt que de corriger
+  // OSM lui-même, donc c'est appliqué à chaque chargement.
+  function applyRoadClassOverrides(){
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      var override = roadCoverage[key];
+      var effectiveClass = (override && override.customClass) ? override.customClass : entry.originalClass;
+      var hidden = !!(override && override.hidden);
+      var changed = entry.roadClass !== effectiveClass;
+
+      if(changed){
+        entry.roadClass = effectiveClass;
+        entry.baseStyle = styleForClass(effectiveClass);
+      }
+
+      var targetLayer = layerForClass(effectiveClass);
+      entry.polylines.forEach(function(line){
+        [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(lyr){ lyr.removeLayer(line); });
+        if(!hidden){
+          targetLayer.addLayer(line);
+          if(changed) line.setStyle(entry.baseStyle);
+        }
+      });
+    });
+  }
 
   function applyRoadCoverageStyling(){
     Object.keys(roadsIndex).forEach(function(key){
@@ -1429,13 +1545,14 @@
       // des routes" par défaut (indicatif, hors ressort de l'arrachage), mais
       // peuvent quand même être marqués "parcourus" directement au toucher sur
       // la carte — ils apparaîtront alors dans la liste une fois marqués.
-      var key = roadKeyFor(tags, el.id, roadClass);
+      var key = roadKeyFor(tags, el.id);
       if(!roadsIndex[key]){
-        roadsIndex[key] = { key: key, label: label, roadClass: roadClass, polylines: [], baseStyle: style };
+        roadsIndex[key] = { key: key, label: label, roadClass: roadClass, originalClass: roadClass, polylines: [], baseStyle: style };
       }
       roadsIndex[key].polylines.push(line);
       line.on('click', function(){ openRoadQuickView(key); });
     });
+    applyRoadClassOverrides();
     applyRoadCoverageStyling();
     if(bounds.length){
       roadBounds = L.latLngBounds(bounds);
@@ -2486,6 +2603,7 @@
     var bestDist = Infinity;
     Object.keys(roadsIndex).forEach(function(key){
       var entry = roadsIndex[key];
+      if(roadCoverage[key] && roadCoverage[key].hidden) return; // route masquée, ignorée
       entry.polylines.forEach(function(line){
         (function walk(arr){
           if(arr.length && Array.isArray(arr[0])){
