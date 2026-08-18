@@ -65,6 +65,7 @@
 <div id="topbar">
   <h1>🛣️ État des routes</h1>
   <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="classify.html" style="color:var(--ink);text-decoration:none;font-size:13px;border:2px solid var(--ink);border-radius:8px;padding:6px 10px;">🗂️ Classifier route par route</a>
     <button class="btn" id="btnReload">↻ Recharger depuis OpenStreetMap</button>
     <a href="index.html">← Retour à la carte</a>
   </div>
@@ -295,7 +296,8 @@
           by: item.by, at: item.at,
           customName: item.customName || null,
           customClass: item.customClass || null,
-          hidden: !!item.hidden
+          hidden: !!item.hidden,
+          reviewed: !!item.reviewed
         };
       });
     } catch(e){ console.warn('Erreur chargement couverture des routes', e); }
@@ -306,7 +308,7 @@
       var e = roadCoverage[key];
       return {
         key: key, covered: !!e.covered, by: e.by, at: e.at,
-        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden
+        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden, reviewed: !!e.reviewed
       };
     });
     var resp = await fetch(roadCoverageApiUrl(), {
