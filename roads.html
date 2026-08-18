@@ -239,10 +239,11 @@
       if(!entry.latlngsList) return;
       var cov = roadCoverage[key];
       if(!cov){ cov = {}; roadCoverage[key] = cov; }
-      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList)){
+      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList) || cov.originalClass !== entry.originalClass){
         cov.latlngsList = entry.latlngsList;
         cov.label = entry.label;
         cov.source = cov.source || 'osm';
+        cov.originalClass = entry.originalClass;
         changed = true;
       }
     });
@@ -322,7 +323,8 @@
           reviewed: !!item.reviewed,
           latlngsList: item.latlngsList || null,
           label: item.label || null,
-          source: item.source || 'osm'
+          source: item.source || 'osm',
+          originalClass: item.originalClass || null
         };
       });
     } catch(e){ console.warn('Erreur chargement couverture des routes', e); }
@@ -334,7 +336,7 @@
       return {
         key: key, covered: !!e.covered, by: e.by, at: e.at,
         customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden, reviewed: !!e.reviewed,
-        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm'
+        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm', originalClass: e.originalClass || null
       };
     });
     var resp = await fetch(roadCoverageApiUrl(), {
@@ -524,9 +526,10 @@
       var cov = roadCoverage[key];
       if(!cov.latlngsList || !cov.latlngsList.length) return;
       found = true;
+      var originalClass = cov.source === 'manual' ? (cov.customClass || 'RC') : (cov.originalClass || 'RC');
       roadsIndex[key] = {
         key: key, label: cov.label || cov.customName || key,
-        roadClass: cov.customClass || 'RC', originalClass: cov.source === 'manual' ? (cov.customClass || 'RC') : 'RC'
+        roadClass: cov.customClass || originalClass, originalClass: originalClass
       };
     });
     return found;
