@@ -102,6 +102,14 @@
         <option value="unnamed">Sans nom (à nommer)</option>
       </select>
     </div>
+    <div class="field">
+      <label>Visibilité</label>
+      <select id="fHidden">
+        <option value="non">Masquer les routes cachées</option>
+        <option value="tous">Toutes (avec cachées)</option>
+        <option value="oui">Cachées seulement</option>
+      </select>
+    </div>
     <div id="resultCount"></div>
   </div>
 
@@ -115,6 +123,7 @@
           <th>Statut</th>
           <th>Par / le</th>
           <th style="width:140px;">Action</th>
+          <th style="width:100px;">Visibilité</th>
         </tr>
       </thead>
       <tbody id="tableBody"></tbody>
@@ -188,15 +197,21 @@
     if(tags.highway === 'track' || tags.highway === 'bridleway') return 'PATH';
     return 'RC';
   }
-  function roadKeyFor(tags, elId, roadClass){
-    if(tags.name) return roadClass + '::' + tags.name;
-    if(tags.ref) return roadClass + '::' + tags.ref;
-    return roadClass + '::way' + elId;
+  // Clé stable, indépendante de la classification (nécessaire pour pouvoir
+  // reclasser une route sans perdre son historique).
+  function roadKeyFor(tags, elId){
+    if(tags.name) return tags.name;
+    if(tags.ref) return tags.ref;
+    return 'way' + elId;
+  }
+  function legacyKeySuffix(key){
+    return key.replace(/^(RC|RD|RN|PATH)::/, '');
   }
 
-  var roadsIndex = {}; // key -> { key, label, roadClass }
-  var roadCoverage = {}; // key -> { covered, by, at, customName }
+  var roadsIndex = {}; // key -> { key, label, roadClass, originalClass }
+  var roadCoverage = {}; // key -> { covered, by, at, customName, customClass, hidden }
   var roadCoverageSha = null;
+  var currentRole = localStorage.getItem('ambroisie_role');
 
   function buildRoadsIndex(osmData){
     roadsIndex = {};
@@ -205,8 +220,19 @@
       var tags = el.tags || {};
       var roadClass = classifyRoad(tags);
       var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
-      var key = roadKeyFor(tags, el.id, roadClass);
-      if(!roadsIndex[key]) roadsIndex[key] = { key: key, label: label, roadClass: roadClass };
+      var key = roadKeyFor(tags, el.id);
+      if(!roadsIndex[key]) roadsIndex[key] = { key: key, label: label, roadClass: roadClass, originalClass: roadClass };
+    });
+    applyRoadClassOverrides();
+  }
+
+  // Applique les reclassifications manuelles mémorisées (RC ↔ RD ↔ RN ↔ PATH)
+  // et retient les routes masquées.
+  function applyRoadClassOverrides(){
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      var override = roadCoverage[key];
+      entry.roadClass = (override && override.customClass) ? override.customClass : entry.originalClass;
     });
   }
 
@@ -247,6 +273,7 @@
 
   async function afterRoadsLoaded(){
     await loadRoadCoverage();
+    applyRoadClassOverrides();
     document.getElementById('loadStatus').style.display = 'none';
     document.getElementById('mainTable').style.display = 'table';
     renderTable();
@@ -262,9 +289,13 @@
       roadCoverageSha = data.sha || null;
       roadCoverage = {};
       (data.items || []).forEach(function(item){
-        roadCoverage[item.key] = {
+        var key = legacyKeySuffix(item.key); // migration des anciennes clés "RC::Nom" -> "Nom"
+        roadCoverage[key] = {
           covered: item.covered !== undefined ? item.covered : true,
-          by: item.by, at: item.at, customName: item.customName || null
+          by: item.by, at: item.at,
+          customName: item.customName || null,
+          customClass: item.customClass || null,
+          hidden: !!item.hidden
         };
       });
     } catch(e){ console.warn('Erreur chargement couverture des routes', e); }
@@ -273,7 +304,10 @@
   async function saveRoadCoverage(){
     var items = Object.keys(roadCoverage).map(function(key){
       var e = roadCoverage[key];
-      return { key: key, covered: !!e.covered, by: e.by, at: e.at, customName: e.customName || null };
+      return {
+        key: key, covered: !!e.covered, by: e.by, at: e.at,
+        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden
+      };
     });
     var resp = await fetch(roadCoverageApiUrl(), {
       method: 'PUT',
@@ -286,6 +320,7 @@
   }
 
   function isRoadCovered(key){ return !!(roadCoverage[key] && roadCoverage[key].covered); }
+  function isRoadHidden(key){ return !!(roadCoverage[key] && roadCoverage[key].hidden); }
   function roadDisplayLabel(entry){
     var custom = roadCoverage[entry.key] && roadCoverage[entry.key].customName;
     return custom || entry.label;
@@ -296,10 +331,14 @@
     var fClass = document.getElementById('fClass').value;
     var fStatus = document.getElementById('fStatus').value;
     var fNamed = document.getElementById('fNamed').value;
+    var fHidden = document.getElementById('fHidden').value;
 
     var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; });
 
     entries = entries.filter(function(e){
+      var hidden = isRoadHidden(e.key);
+      if(fHidden === 'non' && hidden) return false;
+      if(fHidden === 'oui' && !hidden) return false;
       if(fClass && e.roadClass !== fClass) return false;
       var covered = isRoadCovered(e.key);
       if(fStatus === 'oui' && !covered) return false;
@@ -316,21 +355,36 @@
 
     var classColors = { RC:'#2f6b3a', RD:'#c9781f', RN:'#8a3fbf', PATH:'#8a8a8a' };
     var classLabels = { RC:'Communale', RD:'Départementale', RN:'Nationale', PATH:'Privé' };
+    var isAdmin = currentRole === 'admin';
 
     var tbody = document.getElementById('tableBody');
     tbody.innerHTML = entries.map(function(e){
       var covered = isRoadCovered(e.key);
+      var hidden = isRoadHidden(e.key);
       var info = roadCoverage[e.key];
       var displayName = roadDisplayLabel(e);
-      return '<tr data-key="' + escapeHtml(e.key) + '">' +
+
+      var classCell;
+      if(isAdmin){
+        classCell = '<select class="classSelect" data-key="' + escapeHtml(e.key) + '">' +
+          Object.keys(classLabels).map(function(c){
+            return '<option value="' + c + '"' + (c === e.roadClass ? ' selected' : '') + '>' + classLabels[c] + '</option>';
+          }).join('') +
+        '</select>';
+      } else {
+        classCell = '<span class="pill" style="background:' + classColors[e.roadClass] + '22;color:' + classColors[e.roadClass] + ';">' + classLabels[e.roadClass] + '</span>';
+      }
+
+      return '<tr data-key="' + escapeHtml(e.key) + '"' + (hidden ? ' style="opacity:.5;"' : '') + '>' +
         '<td><div class="nameCell">' +
-          '<input type="text" class="nameInput" value="' + escapeHtml(displayName) + '">' +
-          '<button class="saveNameBtn" disabled>Enregistrer</button>' +
+          '<input type="text" class="nameInput" value="' + escapeHtml(displayName) + '"' + (isAdmin ? '' : ' disabled') + '>' +
+          (isAdmin ? '<button class="saveNameBtn" disabled>Enregistrer</button>' : '') +
         '</div></td>' +
-        '<td><span class="pill" style="background:' + classColors[e.roadClass] + '22;color:' + classColors[e.roadClass] + ';">' + classLabels[e.roadClass] + '</span></td>' +
-        '<td>' + (covered ? '✅ Parcourue' : '—') + '</td>' +
+        '<td>' + classCell + '</td>' +
+        '<td>' + (covered ? '✅ Parcourue' : '—') + (hidden ? ' <span style="color:var(--danger);font-size:11px;">(masquée)</span>' : '') + '</td>' +
         '<td style="font-size:11px;color:var(--muted);">' + (info && covered ? escapeHtml(info.by||'') + '<br>' + (info.at ? new Date(info.at).toLocaleDateString('fr-FR') : '') : '—') + '</td>' +
         '<td><button class="toggleBtn ' + (covered?'done':'') + '" data-toggle="' + escapeHtml(e.key) + '">' + (covered ? 'Remettre non parcourue' : 'Marquer parcourue') + '</button></td>' +
+        '<td>' + (isAdmin ? '<button class="toggleBtn" data-hide="' + escapeHtml(e.key) + '">' + (hidden ? '👁️ Afficher' : '🗑️ Masquer') + '</button>' : '—') + '</td>' +
       '</tr>';
     }).join('');
 
@@ -338,23 +392,48 @@
       var key = tr.getAttribute('data-key');
       var input = tr.querySelector('.nameInput');
       var saveBtn = tr.querySelector('.saveNameBtn');
-      input.addEventListener('input', function(){ saveBtn.disabled = false; });
-      saveBtn.addEventListener('click', async function(){
-        var newName = input.value.trim();
-        if(!newName){ showToast('Le nom ne peut pas être vide.'); return; }
+      if(input && saveBtn){
+        input.addEventListener('input', function(){ saveBtn.disabled = false; });
+        saveBtn.addEventListener('click', async function(){
+          var newName = input.value.trim();
+          if(!newName){ showToast('Le nom ne peut pas être vide.'); return; }
+          var e = roadCoverage[key] || { covered: false };
+          e.customName = newName;
+          roadCoverage[key] = e;
+          saveBtn.disabled = true;
+          saveBtn.textContent = '…';
+          try{
+            await saveRoadCoverage();
+            showToast('✓ Nom enregistré.');
+            renderTable();
+          } catch(err){
+            showToast('Erreur lors de l\'enregistrement.');
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Enregistrer';
+          }
+        });
+      }
+    });
+
+    tbody.querySelectorAll('.classSelect').forEach(function(sel){
+      sel.addEventListener('change', async function(){
+        var key = sel.getAttribute('data-key');
+        var entry = roadsIndex[key];
+        var newClass = sel.value;
         var e = roadCoverage[key] || { covered: false };
-        e.customName = newName;
+        // Si on remet la classe d'origine (celle d'OSM), on retire la
+        // correction plutôt que de garder une correction inutile.
+        e.customClass = (newClass === entry.originalClass) ? null : newClass;
         roadCoverage[key] = e;
-        saveBtn.disabled = true;
-        saveBtn.textContent = '…';
+        applyRoadClassOverrides();
+        sel.disabled = true;
         try{
           await saveRoadCoverage();
-          showToast('✓ Nom enregistré.');
+          showToast('✓ Classification mise à jour.');
           renderTable();
         } catch(err){
           showToast('Erreur lors de l\'enregistrement.');
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Enregistrer';
+          sel.disabled = false;
         }
       });
     });
@@ -377,9 +456,30 @@
         }
       });
     });
+
+    tbody.querySelectorAll('[data-hide]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var key = btn.getAttribute('data-hide');
+        var entry = roadsIndex[key];
+        var e = roadCoverage[key] || { covered: false };
+        var willHide = !e.hidden;
+        if(willHide && !confirm('Masquer "' + roadDisplayLabel(entry) + '" ? Elle disparaîtra de la carte principale et du suivi des routes.')) return;
+        e.hidden = willHide;
+        roadCoverage[key] = e;
+        btn.disabled = true;
+        try{
+          await saveRoadCoverage();
+          showToast(willHide ? '✓ Route masquée.' : '✓ Route réaffichée.');
+          renderTable();
+        } catch(err){
+          showToast('Erreur lors de l\'enregistrement.');
+          btn.disabled = false;
+        }
+      });
+    });
   }
 
-  ['fSearch','fClass','fStatus','fNamed'].forEach(function(id){
+  ['fSearch','fClass','fStatus','fNamed','fHidden'].forEach(function(id){
     var el = document.getElementById(id);
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderTable);
   });
