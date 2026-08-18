@@ -217,6 +217,493 @@
   function buildRoadsIndex(osmData){
     roadsIndex = {};
     (osmData.elements || []).forEach(function(el){
+      if(el.type !== 'way' || !el.geometry) return;
+      var tags = el.tags || {};
+      var roadClass = classifyRoad(tags);
+      var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
+      var key = roadKeyFor(tags, el.id);
+      var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
+      if(!roadsIndex[key]) roadsIndex[key] = { key: key, label: label, roadClass: roadClass, originalClass: roadClass, latlngsList: [] };
+      roadsIndex[key].latlngsList.push(latlngs);
+    });
+    applyRoadClassOverrides();
+    syncGeometryToCloud();
+  }
+
+  // Mémorise durablement la forme des routes récupérées, pour ne plus avoir
+  // à recontacter OpenStreetMap à chaque ouverture de cette page.
+  function syncGeometryToCloud(){
+    var changed = false;
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      if(!entry.latlngsList) return;
+      var cov = roadCoverage[key];
+      if(!cov){ cov = {}; roadCoverage[key] = cov; }
+      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList)){
+        cov.latlngsList = entry.latlngsList;
+        cov.label = entry.label;
+        cov.source = cov.source || 'osm';
+        changed = true;
+      }
+    });
+    if(changed) saveRoadCoverage().catch(function(){ /* on retentera plus tard */ });
+  }
+
+  // Applique les reclassifications manuelles mémorisées (RC ↔ RD ↔ RN ↔ PATH)
+  // et retient les routes masquées.
+  function applyRoadClassOverrides(){
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      var override = roadCoverage[key];
+      entry.roadClass = (override && override.customClass) ? override.customClass : entry.originalClass;
+    });
+  }
+
+  function loadRoadsFromOsm(){
+    document.getElementById('loadStatus').style.display = 'block';
+    document.getElementById('loadStatus').textContent = 'Chargement depuis OpenStreetMap…';
+    document.getElementById('mainTable').style.display = 'none';
+
+    var queryInsee =
+      '[out:json][timeout:20];' +
+      'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
+      'way(area.a)["highway"];' +
+      'out geom;';
+
+    fetchFromOverpass(queryInsee, function(data){
+      if(data.elements && data.elements.length > 0){
+        buildRoadsIndex(data);
+        afterRoadsLoaded();
+      } else {
+        loadRoadsBbox();
+      }
+    }, loadRoadsBbox, 15000);
+  }
+
+  function loadRoadsBbox(){
+    var query =
+      '[out:json][timeout:20]' +
+      '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+      'way["highway"];' +
+      'out geom;';
+    fetchFromOverpass(query, function(data){
+      buildRoadsIndex(data);
+      afterRoadsLoaded();
+    }, function(){
+      document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.';
+    }, 12000);
+  }
+
+  async function afterRoadsLoaded(){
+    await loadRoadCoverage();
+    applyRoadClassOverrides();
+    document.getElementById('loadStatus').style.display = 'none';
+    document.getElementById('mainTable').style.display = 'table';
+    renderTable();
+  }
+
+  function roadCoverageApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/road-coverage'); }
+
+  async function loadRoadCoverage(){
+    try{
+      var resp = await fetch(roadCoverageApiUrl(), { method: 'GET', headers: authHeaders() });
+      if(resp.status === 401){ document.getElementById('loginGate').classList.remove('hidden'); return; }
+      var data = await resp.json();
+      roadCoverageSha = data.sha || null;
+      roadCoverage = {};
+      (data.items || []).forEach(function(item){
+        var key = legacyKeySuffix(item.key); // migration des anciennes clés "RC::Nom" -> "Nom"
+        roadCoverage[key] = {
+          covered: item.covered !== undefined ? item.covered : true,
+          by: item.by, at: item.at,
+          customName: item.customName || null,
+          customClass: item.customClass || null,
+          hidden: !!item.hidden,
+          reviewed: !!item.reviewed,
+          latlngsList: item.latlngsList || null,
+          label: item.label || null,
+          source: item.source || 'osm'
+        };
+      });
+    } catch(e){ console.warn('Erreur chargement couverture des routes', e); }
+  }
+
+  async function saveRoadCoverage(){
+    var items = Object.keys(roadCoverage).map(function(key){
+      var e = roadCoverage[key];
+      return {
+        key: key, covered: !!e.covered, by: e.by, at: e.at,
+        customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden, reviewed: !!e.reviewed,
+        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm'
+      };
+    });
+    var resp = await fetch(roadCoverageApiUrl(), {
+      method: 'PUT',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ items: items, sha: roadCoverageSha })
+    });
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    roadCoverageSha = data.sha;
+  }
+
+  function isRoadCovered(key){ return !!(roadCoverage[key] && roadCoverage[key].covered); }
+  function isRoadHidden(key){ return !!(roadCoverage[key] && roadCoverage[key].hidden); }
+  function roadDisplayLabel(entry){
+    var custom = roadCoverage[entry.key] && roadCoverage[entry.key].customName;
+    return custom || entry.label;
+  }
+
+  function renderTable(){
+    var q = document.getElementById('fSearch').value.trim().toLowerCase();
+    var fClass = document.getElementById('fClass').value;
+    var fStatus = document.getElementById('fStatus').value;
+    var fNamed = document.getElementById('fNamed').value;
+    var fHidden = document.getElementById('fHidden').value;
+
+    var entries = Object.keys(roadsIndex).map(function(k){ return roadsIndex[k]; });
+
+    entries = entries.filter(function(e){
+      var hidden = isRoadHidden(e.key);
+      if(fHidden === 'non' && hidden) return false;
+      if(fHidden === 'oui' && !hidden) return false;
+      if(fClass && e.roadClass !== fClass) return false;
+      var covered = isRoadCovered(e.key);
+      if(fStatus === 'oui' && !covered) return false;
+      if(fStatus === 'non' && covered) return false;
+      var isNamed = !e.label.startsWith('Voie (') || !!(roadCoverage[e.key] && roadCoverage[e.key].customName);
+      if(fNamed === 'named' && !isNamed) return false;
+      if(fNamed === 'unnamed' && isNamed) return false;
+      if(q && roadDisplayLabel(e).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    entries.sort(function(a,b){ return roadDisplayLabel(a).localeCompare(roadDisplayLabel(b), 'fr'); });
+
+    document.getElementById('resultCount').textContent = entries.length + ' route(s) sur ' + Object.keys(roadsIndex).length;
+
+    var classColors = { RC:'#2f6b3a', RD:'#c9781f', RN:'#8a3fbf', PATH:'#8a8a8a' };
+    var classLabels = { RC:'Communale', RD:'Départementale', RN:'Nationale', PATH:'Privé' };
+    var isAdmin = currentRole === 'admin';
+
+    var tbody = document.getElementById('tableBody');
+    tbody.innerHTML = entries.map(function(e){
+      var covered = isRoadCovered(e.key);
+      var hidden = isRoadHidden(e.key);
+      var info = roadCoverage[e.key];
+      var displayName = roadDisplayLabel(e);
+
+      var classCell;
+      if(isAdmin){
+        classCell = '<select class="classSelect" data-key="' + escapeHtml(e.key) + '">' +
+          Object.keys(classLabels).map(function(c){
+            return '<option value="' + c + '"' + (c === e.roadClass ? ' selected' : '') + '>' + classLabels[c] + '</option>';
+          }).join('') +
+        '</select>';
+      } else {
+        classCell = '<span class="pill" style="background:' + classColors[e.roadClass] + '22;color:' + classColors[e.roadClass] + ';">' + classLabels[e.roadClass] + '</span>';
+      }
+
+      return '<tr data-key="' + escapeHtml(e.key) + '"' + (hidden ? ' style="opacity:.5;"' : '') + '>' +
+        '<td><div class="nameCell">' +
+          '<input type="text" class="nameInput" value="' + escapeHtml(displayName) + '"' + (isAdmin ? '' : ' disabled') + '>' +
+          (isAdmin ? '<button class="saveNameBtn" disabled>Enregistrer</button>' : '') +
+        '</div></td>' +
+        '<td>' + classCell + '</td>' +
+        '<td>' + (covered ? '✅ Parcourue' : '—') + (hidden ? ' <span style="color:var(--danger);font-size:11px;">(masquée)</span>' : '') + '</td>' +
+        '<td style="font-size:11px;color:var(--muted);">' + (info && covered ? escapeHtml(info.by||'') + '<br>' + (info.at ? new Date(info.at).toLocaleDateString('fr-FR') : '') : '—') + '</td>' +
+        '<td><button class="toggleBtn ' + (covered?'done':'') + '" data-toggle="' + escapeHtml(e.key) + '">' + (covered ? 'Remettre non parcourue' : 'Marquer parcourue') + '</button></td>' +
+        '<td>' + (isAdmin ? '<button class="toggleBtn" data-hide="' + escapeHtml(e.key) + '">' + (hidden ? '👁️ Afficher' : '🗑️ Masquer') + '</button>' : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    tbody.querySelectorAll('tr').forEach(function(tr){
+      var key = tr.getAttribute('data-key');
+      var input = tr.querySelector('.nameInput');
+      var saveBtn = tr.querySelector('.saveNameBtn');
+      if(input && saveBtn){
+        input.addEventListener('input', function(){ saveBtn.disabled = false; });
+        saveBtn.addEventListener('click', async function(){
+          var newName = input.value.trim();
+          if(!newName){ showToast('Le nom ne peut pas être vide.'); return; }
+          var e = roadCoverage[key] || { covered: false };
+          e.customName = newName;
+          roadCoverage[key] = e;
+          saveBtn.disabled = true;
+          saveBtn.textContent = '…';
+          try{
+            await saveRoadCoverage();
+            showToast('✓ Nom enregistré.');
+            renderTable();
+          } catch(err){
+            showToast('Erreur lors de l\'enregistrement.');
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Enregistrer';
+          }
+        });
+      }
+    });
+
+    tbody.querySelectorAll('.classSelect').forEach(function(sel){
+      sel.addEventListener('change', async function(){
+        var key = sel.getAttribute('data-key');
+        var entry = roadsIndex[key];
+        var newClass = sel.value;
+        var e = roadCoverage[key] || { covered: false };
+        // Si on remet la classe d'origine (celle d'OSM), on retire la
+        // correction plutôt que de garder une correction inutile.
+        e.customClass = (newClass === entry.originalClass) ? null : newClass;
+        roadCoverage[key] = e;
+        applyRoadClassOverrides();
+        sel.disabled = true;
+        try{
+          await saveRoadCoverage();
+          showToast('✓ Classification mise à jour.');
+          renderTable();
+        } catch(err){
+          showToast('Erreur lors de l\'enregistrement.');
+          sel.disabled = false;
+        }
+      });
+    });
+
+    tbody.querySelectorAll('[data-toggle]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var key = btn.getAttribute('data-toggle');
+        var e = roadCoverage[key] || { customName: null };
+        e.covered = !e.covered;
+        e.by = currentUser;
+        e.at = new Date().toISOString();
+        roadCoverage[key] = e;
+        btn.disabled = true;
+        try{
+          await saveRoadCoverage();
+          renderTable();
+        } catch(err){
+          showToast('Erreur lors de l\'enregistrement.');
+          btn.disabled = false;
+        }
+      });
+    });
+
+    tbody.querySelectorAll('[data-hide]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var key = btn.getAttribute('data-hide');
+        var entry = roadsIndex[key];
+        var e = roadCoverage[key] || { covered: false };
+        var willHide = !e.hidden;
+        if(willHide && !confirm('Masquer "' + roadDisplayLabel(entry) + '" ? Elle disparaîtra de la carte principale et du suivi des routes.')) return;
+        e.hidden = willHide;
+        roadCoverage[key] = e;
+        btn.disabled = true;
+        try{
+          await saveRoadCoverage();
+          showToast(willHide ? '✓ Route masquée.' : '✓ Route réaffichée.');
+          renderTable();
+        } catch(err){
+          showToast('Erreur lors de l\'enregistrement.');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  ['fSearch','fClass','fStatus','fNamed','fHidden'].forEach(function(id){
+    var el = document.getElementById(id);
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderTable);
+  });
+
+  document.getElementById('btnReload').addEventListener('click', loadRoadsFromOsm);
+
+  // Reconstruit roadsIndex directement depuis la géométrie mémorisée sur
+  // GitHub (road-coverage.json) — pas besoin de recontacter OpenStreetMap au
+  // quotidien une fois que les routes ont été chargées au moins une fois.
+  function rebuildFromCache(){
+    var found = false;
+    roadsIndex = {};
+    Object.keys(roadCoverage).forEach(function(key){
+      var cov = roadCoverage[key];
+      if(!cov.latlngsList || !cov.latlngsList.length) return;
+      found = true;
+      roadsIndex[key] = {
+        key: key, label: cov.label || cov.customName || key,
+        roadClass: cov.customClass || 'RC', originalClass: cov.source === 'manual' ? (cov.customClass || 'RC') : 'RC'
+      };
+    });
+    return found;
+  }
+
+  async function boot(){
+    await loadRoadCoverage();
+    if(rebuildFromCache()){
+      applyRoadClassOverrides();
+      document.getElementById('loadStatus').classList.add('hidden');
+      document.getElementById('mainTable').style.display = 'table';
+      renderTable();
+    } else {
+      // Rien en mémoire encore : premier chargement, on passe par OpenStreetMap.
+      loadRoadsFromOsm();
+    }
+  }
+
+  if(sessionToken && currentUser) boot();
+})();
+</script>
+</body>
+</html><div id="topbar">
+  <h1>🛣️ État des routes</h1>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="classify.html" style="color:var(--ink);text-decoration:none;font-size:13px;border:2px solid var(--ink);border-radius:8px;padding:6px 10px;">🗂️ Classifier route par route</a>
+    <button class="btn" id="btnReload">↻ Recharger depuis OpenStreetMap</button>
+    <a href="index.html">← Retour à la carte</a>
+  </div>
+</div>
+
+<div id="main">
+  <div class="card filters">
+    <div class="field">
+      <label>Recherche</label>
+      <input type="text" id="fSearch" placeholder="Nom de route...">
+    </div>
+    <div class="field">
+      <label>Type</label>
+      <select id="fClass">
+        <option value="">Toutes</option>
+        <option value="RC">Communale (RC)</option>
+        <option value="RD">Départementale (RD)</option>
+        <option value="RN">Nationale (RN)</option>
+        <option value="PATH">Chemin de terre/privé</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Statut</label>
+      <select id="fStatus">
+        <option value="">Tous</option>
+        <option value="oui">Parcourue</option>
+        <option value="non">Non parcourue</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Nom</label>
+      <select id="fNamed">
+        <option value="">Toutes</option>
+        <option value="named">Nommées</option>
+        <option value="unnamed">Sans nom (à nommer)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Visibilité</label>
+      <select id="fHidden">
+        <option value="non">Masquer les routes cachées</option>
+        <option value="tous">Toutes (avec cachées)</option>
+        <option value="oui">Cachées seulement</option>
+      </select>
+    </div>
+    <div id="resultCount"></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <div id="loadStatus" class="loadingMsg">Chargement depuis OpenStreetMap…</div>
+    <table id="mainTable" style="display:none;">
+      <thead>
+        <tr>
+          <th>Nom de la route</th>
+          <th>Type</th>
+          <th>Statut</th>
+          <th>Par / le</th>
+          <th style="width:140px;">Action</th>
+          <th style="width:100px;">Visibilité</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var CONFIG = { WORKER_URL: "https://ambroisie-belsentes-api.clement-thieuleux.workers.dev/signalements" };
+  var INSEE_CODE = "07165";
+  var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
+
+  var sessionToken = localStorage.getItem('ambroisie_token');
+  var currentUser = localStorage.getItem('ambroisie_user');
+
+  if(!sessionToken || !currentUser){
+    document.getElementById('loginGate').classList.remove('hidden');
+  } else {
+    document.getElementById('loginGate').classList.add('hidden');
+  }
+
+  function authHeaders(extra){
+    var h = { 'Authorization': 'Bearer ' + sessionToken };
+    if(extra) Object.assign(h, extra);
+    return h;
+  }
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // ---- Récupération des routes depuis OpenStreetMap (3 serveurs en parallèle) ----
+  function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
+    timeoutMs = timeoutMs || 15000;
+    var endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.openstreetmap.ru/api/interpreter'
+    ];
+    var settled = false, failures = 0;
+    endpoints.forEach(function(url){
+      var controller = new AbortController();
+      var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+      fetch(url + '?data=' + encodeURIComponent(query), { signal: controller.signal })
+        .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(data){ if(settled) return; settled = true; onSuccess(data); })
+        .catch(function(err){
+          clearTimeout(to); failures++;
+          if(!settled && failures === endpoints.length){ settled = true; onFail(); }
+        });
+    });
+  }
+
+  function classifyRoad(tags){
+    var ref = (tags.ref || '').trim();
+    if(/^D\s?\d/i.test(ref)) return 'RD';
+    if(/^N\s?\d/i.test(ref)) return 'RN';
+    if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    if(tags.highway === 'track' || tags.highway === 'bridleway') return 'PATH';
+    return 'RC';
+  }
+  // Clé stable, indépendante de la classification (nécessaire pour pouvoir
+  // reclasser une route sans perdre son historique).
+  function roadKeyFor(tags, elId){
+    if(tags.name) return tags.name;
+    if(tags.ref) return tags.ref;
+    return 'way' + elId;
+  }
+  function legacyKeySuffix(key){
+    return key.replace(/^(RC|RD|RN|PATH)::/, '');
+  }
+
+  var roadsIndex = {}; // key -> { key, label, roadClass, originalClass }
+  var roadCoverage = {}; // key -> { covered, by, at, customName, customClass, hidden }
+  var roadCoverageSha = null;
+  var currentRole = localStorage.getItem('ambroisie_role');
+
+  function buildRoadsIndex(osmData){
+    roadsIndex = {};
+    (osmData.elements || []).forEach(function(el){
       if(el.type !== 'way' || !el.tags) return;
       var tags = el.tags || {};
       var roadClass = classifyRoad(tags);
