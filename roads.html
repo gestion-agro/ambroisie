@@ -169,24 +169,32 @@
   }
 
   // ---- Récupération des routes depuis OpenStreetMap (3 serveurs en parallèle) ----
+  // Relais via le Worker Cloudflare plutôt qu'un appel direct au navigateur :
+  // certains réseaux/limitations anti-abus d'Overpass bloquent les requêtes
+  // directes, alors que l'infrastructure Cloudflare y accède normalement.
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 15000;
-    var endpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.openstreetmap.ru/api/interpreter'
-    ];
-    var settled = false, failures = 0;
-    endpoints.forEach(function(url){
-      var controller = new AbortController();
-      var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-      fetch(url + '?data=' + encodeURIComponent(query), { signal: controller.signal })
-        .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function(data){ if(settled) return; settled = true; onSuccess(data); })
-        .catch(function(err){
-          clearTimeout(to); failures++;
-          if(!settled && failures === endpoints.length){ settled = true; onFail(); }
-        });
+    timeoutMs = timeoutMs || 25000;
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query }),
+      signal: controller.signal
+    })
+    .then(function(r){
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data && data.error) throw new Error(data.error);
+      onSuccess(data);
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Relais Overpass (Worker) en échec:', err);
+      onFail();
     });
   }
 
