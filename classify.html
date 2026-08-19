@@ -159,24 +159,32 @@
   var highlightLayer = L.layerGroup().addTo(map);
 
   // ---- Récupération des routes depuis OpenStreetMap (3 serveurs en parallèle) ----
+  // Relais via le Worker Cloudflare plutôt qu'un appel direct au navigateur :
+  // certains réseaux/limitations anti-abus d'Overpass bloquent les requêtes
+  // directes, alors que l'infrastructure Cloudflare y accède normalement.
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 15000;
-    var endpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.openstreetmap.ru/api/interpreter'
-    ];
-    var settled = false, failures = 0;
-    endpoints.forEach(function(url){
-      var controller = new AbortController();
-      var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-      fetch(url + '?data=' + encodeURIComponent(query), { signal: controller.signal })
-        .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function(data){ if(settled) return; settled = true; onSuccess(data); })
-        .catch(function(err){
-          clearTimeout(to); failures++;
-          if(!settled && failures === endpoints.length){ settled = true; onFail(); }
-        });
+    timeoutMs = timeoutMs || 25000;
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query }),
+      signal: controller.signal
+    })
+    .then(function(r){
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data && data.error) throw new Error(data.error);
+      onSuccess(data);
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Relais Overpass (Worker) en échec:', err);
+      onFail();
     });
   }
 
@@ -224,10 +232,11 @@
       var entry = roadsIndex[key];
       var cov = roadCoverage[key];
       if(!cov){ cov = {}; roadCoverage[key] = cov; }
-      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList)){
+      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList) || cov.originalClass !== entry.originalClass){
         cov.latlngsList = entry.latlngsList;
         cov.label = entry.label;
         cov.source = cov.source || 'osm';
+        cov.originalClass = entry.originalClass;
         changed = true;
       }
     });
@@ -283,7 +292,8 @@
           reviewed: !!item.reviewed,
           latlngsList: item.latlngsList || null,
           label: item.label || null,
-          source: item.source || 'osm'
+          source: item.source || 'osm',
+          originalClass: item.originalClass || null
         };
       });
     } catch(e){ console.warn('Erreur chargement couverture des routes', e); }
@@ -296,7 +306,7 @@
         key: key, covered: !!e.covered, by: e.by, at: e.at,
         customName: e.customName || null, customClass: e.customClass || null,
         hidden: !!e.hidden, reviewed: !!e.reviewed,
-        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm'
+        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm', originalClass: e.originalClass || null
       };
     });
     var resp = await fetch(roadCoverageApiUrl(), {
@@ -327,9 +337,10 @@
       var cov = roadCoverage[key];
       if(!cov.latlngsList || !cov.latlngsList.length) return;
       found = true;
+      var originalClass = cov.source === 'manual' ? (cov.customClass || 'RC') : (cov.originalClass || 'RC');
       roadsIndex[key] = {
         key: key, label: cov.label || cov.customName || key,
-        roadClass: cov.customClass || 'RC', originalClass: cov.source === 'manual' ? (cov.customClass || 'RC') : 'RC',
+        roadClass: cov.customClass || originalClass, originalClass: originalClass,
         latlngsList: cov.latlngsList
       };
     });
