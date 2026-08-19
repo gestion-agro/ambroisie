@@ -163,7 +163,7 @@
   // certains réseaux/limitations anti-abus d'Overpass bloquent les requêtes
   // directes, alors que l'infrastructure Cloudflare y accède normalement.
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 25000;
+    timeoutMs = timeoutMs || 28000;
     var controller = new AbortController();
     var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
     fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
@@ -256,7 +256,7 @@
       } else {
         loadRoadsBbox();
       }
-    }, loadRoadsBbox, 15000);
+    }, loadRoadsBbox, 28000);
   }
   function loadRoadsBbox(){
     var query =
@@ -269,7 +269,7 @@
       afterRoadsLoaded();
     }, function(){
       document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.';
-    }, 12000);
+    }, 25000);
   }
 
   function roadCoverageApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/road-coverage'); }
