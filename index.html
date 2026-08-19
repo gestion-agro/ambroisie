@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-g</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1331,7 +1331,7 @@
           '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
           'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
           'out body geom;';
-        fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 25000);
+        fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 38000);
       }
     }, function(){
       // La requête INSEE elle-même a échoué (réseau/serveur) : on tente quand même la bbox
@@ -1340,8 +1340,8 @@
         '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
         'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
         'out body geom;';
-      fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 25000);
-    }, 28000);
+      fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 38000);
+    }, 38000);
   }
 
   function saveCache(data, precision){
@@ -1462,7 +1462,7 @@
         console.warn('Impossible de contacter OpenStreetMap : le contour de secours intégré reste affiché (moins précis que la version en ligne).');
         showNetworkWarningBanner();
       }
-    }, 28000);
+    }, 38000);
   }
 
   var networkWarningShown = false;
@@ -1488,7 +1488,7 @@
   // qui peuvent toucher certains réseaux ou navigateurs directement, et le
   // Worker gère lui-même les 3 serveurs de secours côté serveur.
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 28000;
+    timeoutMs = timeoutMs || 38000;
     var controller = new AbortController();
     var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
     fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
