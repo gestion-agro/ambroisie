@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-b</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-c</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -673,6 +673,11 @@
         <h3 style="font-size:14px;color:var(--danger);">⚠️ Réinitialiser les tracés de tous les conseillers</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface l'historique de trajet de TOUS les conseillers (utile pour repartir de zéro à chaque nouvelle campagne).</p>
         <button class="btn" id="btnResetAllTracks" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Réinitialiser tous les tracés</button>
+      </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;color:var(--danger);">⚠️ Réinitialiser la classification des routes</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface les noms/classifications mémorisés (suite à un bug de migration) et force un rechargement propre depuis OpenStreetMap. Les routes déjà marquées "parcourues" restent parcourues.</p>
+        <button class="btn" id="btnResetRoadClassification" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Réinitialiser les routes</button>
       </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
@@ -3104,6 +3109,52 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Réinitialiser tous les tracés';
+    }
+  });
+
+  document.getElementById('btnResetRoadClassification').addEventListener('click', async function(){
+    var ok = await customConfirm(
+      'Ceci efface les noms, classifications (RC/RD/RN/privé) et formes de routes mémorisés — à cause d\'un bug de migration passé, elles sont toutes tombées en "Communale". Les routes déjà marquées "parcourues" gardent leur statut, elles seront juste re-nommées/reclassées au prochain chargement OpenStreetMap. Continuer ?',
+      'Réinitialiser les routes'
+    );
+    if(!ok) return;
+    var btn = document.getElementById('btnResetRoadClassification');
+    btn.disabled = true;
+    btn.textContent = 'Réinitialisation…';
+    try{
+      // On relit la dernière version avant d'écrire, comme pour les tracés.
+      var getResp = await fetch(roadCoverageApiUrl(), { method: 'GET', headers: authHeaders() });
+      handleAuthResponse(getResp);
+      if(!getResp.ok) throw new Error('Erreur lecture');
+      var currentData = await getResp.json();
+      var items = currentData.items || [];
+
+      // Pour chaque route déjà marquée parcourue, on garde juste ce statut
+      // (et le nom personnalisé s'il y en a un) — on efface la forme et la
+      // classification, qui seront reconstruites proprement au prochain
+      // chargement OpenStreetMap. Les routes jamais marquées parcourues sont
+      // supprimées entièrement (rien d'utile à garder dessus).
+      var kept = items
+        .filter(function(it){ return it.covered === true; })
+        .map(function(it){
+          return { key: it.key, covered: true, by: it.by, at: it.at, customName: it.customName || null };
+        });
+
+      var resp = await fetch(roadCoverageApiUrl(), {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: kept, sha: currentData.sha || null })
+      });
+      handleAuthResponse(resp);
+      if(!resp.ok) throw new Error('Erreur');
+
+      await customAlert('Routes réinitialisées (' + kept.length + ' route(s) parcourue(s) conservée(s)). La page va se recharger pour reprendre depuis OpenStreetMap.');
+      location.reload();
+    } catch(e){
+      await customAlert('Erreur lors de la réinitialisation.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Réinitialiser les routes';
     }
   });
 
