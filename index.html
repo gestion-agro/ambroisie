@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-c</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-e</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1483,45 +1483,33 @@
     'Merci de faire ce signalement directement sur la plateforme nationale :\n' +
     'https://signalement-ambroisie.atlasante.fr/dashboard';
 
+  // Passe désormais par le Worker Cloudflare, qui relaie lui-même la requête
+  // vers Overpass depuis son infrastructure — évite les blocages/limitations
+  // qui peuvent toucher certains réseaux ou navigateurs directement, et le
+  // Worker gère lui-même les 3 serveurs de secours côté serveur.
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 20000;
-    var endpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.openstreetmap.ru/api/interpreter'
-    ];
-
-    // On interroge les 3 serveurs EN MÊME TEMPS plutôt que l'un après l'autre :
-    // avant, si le premier serveur était en panne, on attendait quand même son
-    // délai complet avant de passer au suivant, ce qui pouvait cumuler jusqu'à
-    // 3 fois le temps d'attente. Maintenant, la première réponse qui arrive
-    // (le serveur le plus rapide/disponible) est utilisée directement.
-    var settled = false;
-    var failures = 0;
-
-    endpoints.forEach(function(url){
-      var controller = new AbortController();
-      var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-      fetch(url + '?data=' + encodeURIComponent(query), { signal: controller.signal })
-        .then(function(r){
-          clearTimeout(to);
-          if(!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        })
-        .then(function(data){
-          if(settled) return; // une autre réponse est déjà arrivée en premier
-          settled = true;
-          onSuccess(data);
-        })
-        .catch(function(err){
-          clearTimeout(to);
-          console.warn('Overpass endpoint failed:', url, err);
-          failures++;
-          if(!settled && failures === endpoints.length){
-            settled = true;
-            onFail();
-          }
-        });
+    timeoutMs = timeoutMs || 25000;
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query }),
+      signal: controller.signal
+    })
+    .then(function(r){
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data && data.error) throw new Error(data.error);
+      onSuccess(data);
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Relais Overpass (Worker) en échec:', err);
+      onFail();
     });
   }
 
