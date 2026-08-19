@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-g</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-h</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1315,32 +1315,28 @@
   // mais garantit un affichage). Le callback reçoit aussi la provenance ('insee'
   // ou 'bbox') pour que l'appelant sache si le résultat est fiable à long terme.
   function loadRoadsData(onSuccess, onFail){
-    var queryInsee =
-      '[out:json][timeout:25];' +
-      'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
-      'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+    // La requête par boîte géographique (bbox) est bien plus rapide et légère
+    // pour Overpass que la recherche par zone administrative (area["ref:INSEE"]),
+    // documentée comme l'une des opérations les plus coûteuses de leur moteur.
+    // On l'essaie donc en premier — elle couvre largement la commune, et le
+    // découpage précis se fait déjà côté appli (clipLineToCommune).
+    var queryBbox =
+      '[out:json][timeout:25]' +
+      '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
+      'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
       'out body geom;';
 
-    fetchFromOverpass(queryInsee, function(data){
-      if(data.elements && data.elements.length > 0){
-        onSuccess(data, 'insee');
-      } else {
-        console.warn('Contour INSEE introuvable ou vide dans OSM, repli sur la boîte englobante.');
-        var queryBbox =
-          '[out:json][timeout:20]' +
-          '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
-          'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
-          'out body geom;';
-        fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 38000);
-      }
+    fetchFromOverpass(queryBbox, function(data){
+      onSuccess(data, 'bbox');
     }, function(){
-      // La requête INSEE elle-même a échoué (réseau/serveur) : on tente quand même la bbox
-      var queryBbox =
-        '[out:json][timeout:20]' +
-        '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
-        'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
+      // Repli sur la requête par zone administrative (plus lente, mais parfois
+      // seule à fonctionner selon l'état du serveur ce jour-là).
+      var queryInsee =
+        '[out:json][timeout:25];' +
+        'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
+        'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
         'out body geom;';
-      fetchFromOverpass(queryBbox, function(data2){ onSuccess(data2, 'bbox'); }, onFail, 38000);
+      fetchFromOverpass(queryInsee, function(data2){ onSuccess(data2, 'insee'); }, onFail, 38000);
     }, 38000);
   }
 
