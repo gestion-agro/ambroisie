@@ -273,34 +273,36 @@
     document.getElementById('loadStatus').textContent = 'Chargement depuis OpenStreetMap…';
     document.getElementById('mainTable').style.display = 'none';
 
+    // La requête bbox est bien plus légère/rapide pour Overpass que la
+    // recherche par zone administrative (area["ref:INSEE"]) — on l'essaie
+    // donc en premier, la seconde ne servant plus que de repli.
+    loadRoadsBbox();
+  }
+
+  function loadRoadsInsee(){
     var queryInsee =
-      '[out:json][timeout:20];' +
+      '[out:json][timeout:25];' +
       'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
       'way(area.a)["highway"];' +
       'out geom;';
-
     fetchFromOverpass(queryInsee, function(data){
-      if(data.elements && data.elements.length > 0){
-        buildRoadsIndex(data);
-        afterRoadsLoaded();
-      } else {
-        loadRoadsBbox();
-      }
-    }, loadRoadsBbox, 38000);
+      buildRoadsIndex(data);
+      afterRoadsLoaded();
+    }, function(){
+      document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.';
+    }, 38000);
   }
 
   function loadRoadsBbox(){
     var query =
-      '[out:json][timeout:20]' +
+      '[out:json][timeout:25]' +
       '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
       'way["highway"];' +
       'out geom;';
     fetchFromOverpass(query, function(data){
       buildRoadsIndex(data);
       afterRoadsLoaded();
-    }, function(){
-      document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.';
-    }, 38000);
+    }, loadRoadsInsee, 38000);
   }
 
   async function afterRoadsLoaded(){
