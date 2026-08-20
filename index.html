@@ -1762,6 +1762,30 @@
   // au quotidien — utile si la connexion est mauvaise ou si le service est
   // indisponible.
   var geometrySyncPending = false;
+  // Réduit la précision des coordonnées à 5 décimales (~1m, largement
+  // suffisant pour l'affichage) et retire les points consécutifs devenus
+  // identiques après arrondi — l'API GitHub refuse de lire un fichier de
+  // plus de 1 Mo, et stocker la géométrie complète de nombreuses routes en
+  // pleine précision (15 décimales) fait très vite dépasser cette limite.
+  function roundGeometry(node){
+    if(!Array.isArray(node)) return node;
+    if(node.length === 2 && typeof node[0] === 'number' && typeof node[1] === 'number'){
+      return [Math.round(node[0] * 1e5) / 1e5, Math.round(node[1] * 1e5) / 1e5];
+    }
+    var mapped = node.map(roundGeometry);
+    // Une seule étape de dédoublonnage, sur les tableaux de points (pas sur
+    // les tableaux de lignes) : évite de fusionner des lignes distinctes.
+    if(mapped.length && Array.isArray(mapped[0]) && typeof mapped[0][0] === 'number'){
+      var deduped = [];
+      mapped.forEach(function(p){
+        var last = deduped[deduped.length - 1];
+        if(!last || last[0] !== p[0] || last[1] !== p[1]) deduped.push(p);
+      });
+      return deduped;
+    }
+    return mapped;
+  }
+
   function syncRoadGeometryToCloud(){
     if(geometrySyncPending) return;
     var changed = false;
@@ -1769,8 +1793,9 @@
       var entry = roadsIndex[key];
       var cov = roadCoverage[key];
       if(!cov){ cov = {}; roadCoverage[key] = cov; }
-      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(entry.latlngsList) || cov.originalClass !== entry.originalClass){
-        cov.latlngsList = entry.latlngsList;
+      var roundedGeom = roundGeometry(entry.latlngsList);
+      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(roundedGeom) || cov.originalClass !== entry.originalClass){
+        cov.latlngsList = roundedGeom;
         cov.label = entry.label;
         cov.source = cov.source || 'osm';
         // Indispensable pour reconstruire correctement RD/RN/privé quand on
