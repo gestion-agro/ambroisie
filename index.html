@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-a</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-b</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1372,6 +1372,12 @@
 
   // On démarre avec le contour de secours, immédiatement affiché.
   var communeRings = FALLBACK_BOUNDARY_RINGS;
+  // Indique si communeRings est le vrai contour précis (chargé depuis OSM)
+  // ou toujours le contour de secours (approximatif). Important : découper
+  // les routes sur un contour approximatif peut couper de vraies portions de
+  // route à tort si l'approximation "mord" légèrement sur le tracé réel —
+  // mieux vaut alors ne pas découper du tout.
+  var hasPreciseBoundary = false;
 
   function drawBoundaryRings(rings){
     boundaryLayer.clearLayers();
@@ -1435,6 +1441,7 @@
       .map(function(m){ return m.geometry.map(function(p){ return [p.lat, p.lon]; }); });
     if(segments.length === 0) return;
     communeRings = stitchSegments(segments);
+    hasPreciseBoundary = true;
     drawBoundaryRings(communeRings);
   }
 
@@ -1720,7 +1727,11 @@
     osmData.elements.forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
-      var clipped = clipLineToCommune(latlngs);
+      // On ne découpe aux limites de la commune que si on a le vrai contour
+      // précis — avec le contour de secours (approximatif), le découpage
+      // coupait à tort de vraies portions de route là où l'approximation
+      // "mordait" légèrement sur le tracé réel (routes qui semblaient trouées).
+      var clipped = hasPreciseBoundary ? clipLineToCommune(latlngs) : [latlngs];
       if(clipped.length === 0) return; // route entièrement hors commune : on ne l'affiche pas
       var tags = el.tags || {};
       var roadClass = classifyRoad(tags);
