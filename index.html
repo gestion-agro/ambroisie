@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-18-h</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-a</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1315,6 +1315,18 @@
   // mais garantit un affichage). Le callback reçoit aussi la provenance ('insee'
   // ou 'bbox') pour que l'appelant sache si le résultat est fiable à long terme.
   function loadRoadsData(onSuccess, onFail){
+    // La BD TOPO de l'IGN (data.geopf.fr) est essayée en premier : source
+    // officielle française, infrastructure indépendante d'OSM/Overpass (déjà
+    // utilisée pour le cadastre, qui fonctionne de manière fiable).
+    // Overpass ne sert plus que de repli si l'IGN est aussi indisponible.
+    fetchFromBdTopo(BBOX, function(data){
+      onSuccess(data, 'bdtopo');
+    }, function(){
+      loadRoadsFromOverpass(onSuccess, onFail);
+    }, 15000);
+  }
+
+  function loadRoadsFromOverpass(onSuccess, onFail){
     // La requête par boîte géographique (bbox) est bien plus rapide et légère
     // pour Overpass que la recherche par zone administrative (area["ref:INSEE"]),
     // documentée comme l'une des opérations les plus coûteuses de leur moteur.
@@ -1483,6 +1495,35 @@
   // vers Overpass depuis son infrastructure — évite les blocages/limitations
   // qui peuvent toucher certains réseaux ou navigateurs directement, et le
   // Worker gère lui-même les 3 serveurs de secours côté serveur.
+  // Relais vers la BD TOPO de l'IGN (source officielle française,
+  // indépendante d'OSM/Overpass) — essayée en premier, Overpass ne sert plus
+  // que de repli si jamais data.geopf.fr est aussi indisponible.
+  function fetchFromBdTopo(bbox, onSuccess, onFail, timeoutMs){
+    timeoutMs = timeoutMs || 15000;
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/bdtopo-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bbox: bbox }),
+      signal: controller.signal
+    })
+    .then(function(r){
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data && data.error) throw new Error(data.error);
+      onSuccess(data);
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Relais BD TOPO (IGN) en échec:', err);
+      onFail();
+    });
+  }
+
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
     timeoutMs = timeoutMs || 38000;
     var controller = new AbortController();
