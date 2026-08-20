@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-d</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-e</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -740,9 +740,11 @@
 </div>
 
 <div id="drawRoadBanner" class="hidden" style="position:fixed;left:10px;right:10px;bottom:90px;z-index:1400;background:var(--panel);border:3px solid #e6007e;border-radius:12px;padding:12px 14px;box-shadow:2px 3px 0 rgba(0,0,0,.2);">
-  <p style="margin:0 0 8px;font-size:13px;font-weight:700;">✏️ Touchez la carte pour tracer la route (<span id="drawRoadCount">0</span> point(s))</p>
+  <p id="drawRoadTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;">✏️ Touchez la carte pour tracer la route</p>
+  <p style="margin:0 0 8px;font-size:12px;color:var(--muted);"><span id="drawRoadCount">0</span> point(s)</p>
   <div style="display:flex;gap:8px;">
     <button class="btn" id="btnCancelDrawRoad" style="flex:1;">Annuler</button>
+    <button class="btn" id="btnRemoveLastPoint" style="flex:1;">↩️ Dernier point</button>
     <button class="btn primary" id="btnFinishDrawRoad" style="flex:1;" disabled>Terminer</button>
   </div>
 </div>
@@ -921,7 +923,8 @@
             latlngsList: item.latlngsList || null,
             label: item.label || null,
             source: item.source || 'osm',
-            originalClass: item.originalClass || null
+            originalClass: item.originalClass || null,
+            customGeometry: item.customGeometry || null
           };
         });
         // Si OpenStreetMap n'a jamais répondu (aucune route affichée), on
@@ -932,6 +935,7 @@
           rebuildRoadsFromStoredGeometry();
         } else {
           drawStoredManualRoads();
+          applyCustomGeometryOverrides();
         }
         applyRoadClassOverrides();
         applyRoadCoverageStyling();
@@ -942,11 +946,27 @@
   function saveRoadCoverage(){
     var items = Object.keys(roadCoverage).map(function(key){
       var e = roadCoverage[key];
-      return {
+      var item = {
         key: key, covered: !!e.covered, by: e.by, at: e.at,
         customName: e.customName || null, customClass: e.customClass || null, hidden: !!e.hidden, reviewed: !!e.reviewed,
-        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm', originalClass: e.originalClass || null
+        originalClass: e.originalClass || null
       };
+      // La géométrie n'est mémorisée QUE pour les routes tracées manuellement
+      // (elles n'ont aucune autre source où les retrouver). Pour les routes
+      // BD TOPO, on la recharge à chaque fois depuis l'IGN (fiable et rapide
+      // maintenant) plutôt que de l'entasser dans ce fichier — un fichier
+      // avec la géométrie de toute la commune finit par dépasser la limite
+      // de 1 Mo de l'API GitHub, ce qui faisait échouer les sauvegardes.
+      if(e.source === 'manual'){
+        item.latlngsList = e.latlngsList || null;
+        item.label = e.label || null;
+        item.source = 'manual';
+      }
+      // Un tracé ajusté manuellement (📏 Modifier le tracé) reste mémorisé
+      // même pour une route BD TOPO normale — c'est un ajustement ponctuel,
+      // pas la géométrie de toute la commune, donc pas de souci de taille.
+      if(e.customGeometry) item.customGeometry = e.customGeometry;
+      return item;
     });
     return fetch(roadCoverageApiUrl(), {
       method: 'PUT',
@@ -958,9 +978,9 @@
     .then(function(data){ roadCoverageSha = data.sha; });
   }
 
-  // Reconstruit entièrement la carte des routes à partir de la géométrie
-  // mémorisée sur GitHub, sans passer par OpenStreetMap — filet de secours
-  // si OSM est injoignable (comme observé sur certains réseaux/4G).
+  // Reconstruit les routes tracées manuellement depuis la mémoire GitHub (la
+  // seule source où elles existent). Les routes BD TOPO, elles, ne sont plus
+  // mémorisées ici — rechargées à chaque fois depuis l'IGN, fiable désormais.
   function rebuildRoadsFromStoredGeometry(){
     var found = false;
     var bounds = [];
@@ -1025,7 +1045,8 @@
     if(currentRole === 'admin'){
       buttons.splice(1, 0, { label: '✏️ Nom', value: 'rename' });
       buttons.splice(2, 0, { label: '🔄 Classification', value: 'reclass' });
-      buttons.splice(3, 0, { label: '🗑️ Masquer', value: 'hide', danger: true });
+      buttons.splice(3, 0, { label: '📏 Modifier le tracé', value: 'edittrace' });
+      buttons.splice(4, 0, { label: '🗑️ Masquer', value: 'hide', danger: true });
     }
     showModal({
       title: roadDisplayLabel(entry),
@@ -1035,6 +1056,7 @@
       if(choice === 'toggle') toggleRoadCoverage(key);
       else if(choice === 'rename') renameRoad(key, entry);
       else if(choice === 'reclass') reclassifyRoad(key, entry);
+      else if(choice === 'edittrace') startEditRoadTrace(key, entry);
       else if(choice === 'hide') hideRoad(key, entry);
     });
   }
@@ -1105,19 +1127,85 @@
   var drawingPoints = [];
   var drawingMarkers = L.layerGroup();
   var drawingLine = null;
+  var editingRoadKey = null; // si non-null : on modifie le tracé d'une route existante plutôt que d'en créer une nouvelle
 
   function startDrawRoad(){
     if(currentRole !== 'admin') return;
+    editingRoadKey = null;
     drawingRoad = true;
     drawingPoints = [];
     drawingMarkers.addTo(map);
     if(drawingLine){ map.removeLayer(drawingLine); drawingLine = null; }
     document.getElementById('drawRoadBanner').classList.remove('hidden');
+    document.getElementById('drawRoadTitle').textContent = '✏️ Touchez la carte pour tracer la route';
+    document.getElementById('btnFinishDrawRoad').textContent = 'Terminer';
     updateDrawRoadUI();
   }
 
+  // Modifier le tracé d'une route existante (agrandir, raccourcir, ou
+  // ajuster un point) — repart des points actuels de la route, modifiables
+  // exactement comme lors d'un tracé neuf (glisser un point, en ajouter en
+  // touchant la carte, ou supprimer le dernier).
+  function startEditRoadTrace(key, entry){
+    if(currentRole !== 'admin') return;
+    var line = (roadCoverage[key] && roadCoverage[key].customGeometry) ||
+      (entry.latlngsList && entry.latlngsList[0]) || [];
+    if(!line.length){ customAlert('Impossible de modifier cette route (tracé introuvable).'); return; }
+    editingRoadKey = key;
+    drawingRoad = true;
+    drawingPoints = line.map(function(p){ return [p[0], p[1]]; });
+    drawingMarkers.clearLayers();
+    drawingMarkers.addTo(map);
+    if(drawingLine){ map.removeLayer(drawingLine); drawingLine = null; }
+    drawingPoints.forEach(addDraggableMarker);
+    redrawDrawingLine();
+    document.getElementById('drawRoadBanner').classList.remove('hidden');
+    document.getElementById('drawRoadTitle').textContent = '✏️ Glissez un point pour l\'ajuster, touchez la carte pour prolonger';
+    document.getElementById('btnFinishDrawRoad').textContent = 'Enregistrer les modifications';
+    updateDrawRoadUI();
+  }
+
+  function redrawDrawingLine(){
+    if(drawingLine) map.removeLayer(drawingLine);
+    if(drawingPoints.length > 1){
+      drawingLine = L.polyline(drawingPoints, { color:'#e6007e', weight:5, dashArray:'6 6' }).addTo(map);
+    }
+  }
+
+  var draggingMarkerIndex = -1;
+
+  function addDraggableMarker(latlng, index){
+    var marker = L.circleMarker(latlng, { radius:6, color:'#e6007e', fillColor:'#fff', fillOpacity:1, weight:3 });
+    // Leaflet ne permet pas de rendre un circleMarker "draggable" nativement
+    // sans le plugin Leaflet.Editable — on simule le glisser au doigt/souris
+    // manuellement (écouteurs partagés au niveau de la carte, voir plus bas),
+    // ce qui reste fiable sur mobile comme sur ordinateur.
+    marker.on('mousedown touchstart', function(e){
+      draggingMarkerIndex = drawingMarkers.getLayers().indexOf(marker);
+      map.dragging.disable();
+      L.DomEvent.stopPropagation(e);
+    });
+    marker.addTo(drawingMarkers);
+  }
+
+  map.on('mousemove touchmove', function(e){
+    if(draggingMarkerIndex === -1) return;
+    var layers = drawingMarkers.getLayers();
+    var marker = layers[draggingMarkerIndex];
+    if(!marker) return;
+    marker.setLatLng(e.latlng);
+    drawingPoints[draggingMarkerIndex] = [e.latlng.lat, e.latlng.lng];
+    redrawDrawingLine();
+  });
+  map.on('mouseup touchend', function(){
+    if(draggingMarkerIndex === -1) return;
+    draggingMarkerIndex = -1;
+    map.dragging.enable();
+  });
+
   function cancelDrawRoad(){
     drawingRoad = false;
+    editingRoadKey = null;
     drawingPoints = [];
     drawingMarkers.clearLayers();
     map.removeLayer(drawingMarkers);
@@ -1130,19 +1218,54 @@
     document.getElementById('btnFinishDrawRoad').disabled = drawingPoints.length < 2;
   }
 
+  function removeLastDrawingPoint(){
+    if(drawingPoints.length === 0) return;
+    drawingPoints.pop();
+    var layers = drawingMarkers.getLayers();
+    if(layers.length) drawingMarkers.removeLayer(layers[layers.length - 1]);
+    redrawDrawingLine();
+    updateDrawRoadUI();
+  }
+
   map.on('click', function(e){
     if(!drawingRoad) return;
     drawingPoints.push([e.latlng.lat, e.latlng.lng]);
-    L.circleMarker(e.latlng, { radius:5, color:'#e6007e', fillColor:'#e6007e', fillOpacity:1 }).addTo(drawingMarkers);
-    if(drawingLine) map.removeLayer(drawingLine);
-    if(drawingPoints.length > 1){
-      drawingLine = L.polyline(drawingPoints, { color:'#e6007e', weight:5, dashArray:'6 6' }).addTo(map);
-    }
+    addDraggableMarker(e.latlng);
+    redrawDrawingLine();
     updateDrawRoadUI();
   });
 
   async function finishDrawRoad(){
     if(drawingPoints.length < 2) return;
+
+    if(editingRoadKey){
+      // Modification d'une route existante : on enregistre juste le nouveau
+      // tracé, sans redemander nom/classification (déjà définis).
+      var key = editingRoadKey;
+      var e = roadCoverage[key] || { covered: false };
+      e.customGeometry = drawingPoints.slice();
+      roadCoverage[key] = e;
+      var entry = roadsIndex[key];
+      if(entry){
+        entry.polylines.forEach(function(line){ [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); }); });
+        entry.latlngsList = [drawingPoints.slice()];
+        var newLine = L.polyline(drawingPoints, entry.baseStyle);
+        var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+        newLine.addTo(targetLayer);
+        newLine.on('click', function(){ openRoadQuickView(key); });
+        entry.polylines = [newLine];
+        applyRoadCoverageStyling();
+      }
+      cancelDrawRoad();
+      try{
+        await saveRoadCoverage();
+        await customAlert('Tracé mis à jour.');
+      } catch(err){
+        await customAlert('Erreur lors de l\'enregistrement. Réessayez.');
+      }
+      return;
+    }
+
     var name = prompt('Nom de cette route :', '');
     if(name === null){ return; } // annulé, mais le tracé reste modifiable
     name = name.trim();
@@ -1160,8 +1283,8 @@
     });
     if(!choice) return;
 
-    var key = 'manual-' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    roadCoverage[key] = {
+    var newKey = 'manual-' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    roadCoverage[newKey] = {
       covered: false, customName: name, customClass: choice, hidden: false, reviewed: true,
       latlngsList: [drawingPoints.slice()], label: name, source: 'manual'
     };
@@ -1756,12 +1879,21 @@
     // fausses coupures aux jonctions entre tronçons.
     Object.keys(grouped).forEach(function(key){
       var g = grouped[key];
-      var stitched = stitchSegmentsLoose(g.rawLines);
-      var finalSegments = [];
-      stitched.forEach(function(line){
-        var clipped = hasPreciseBoundary ? clipLineToCommune(line) : clipLineToCommuneWithMargin(line);
-        clipped.forEach(function(seg){ finalSegments.push(seg); });
-      });
+      var customGeom = roadCoverage[key] && roadCoverage[key].customGeometry;
+      var finalSegments;
+      if(customGeom && customGeom.length > 1){
+        // Un tracé a été ajusté manuellement (📏 Modifier le tracé) : on
+        // l'utilise tel quel, à la place de la géométrie BD TOPO — pas de
+        // recollage ni découpage à y appliquer, c'est déjà le tracé voulu.
+        finalSegments = [customGeom];
+      } else {
+        var stitched = stitchSegmentsLoose(g.rawLines);
+        finalSegments = [];
+        stitched.forEach(function(line){
+          var clipped = hasPreciseBoundary ? clipLineToCommune(line) : clipLineToCommuneWithMargin(line);
+          clipped.forEach(function(seg){ finalSegments.push(seg); });
+        });
+      }
       if(finalSegments.length === 0) return; // route entièrement hors commune
 
       roadsIndex[key] = { key: key, label: g.label, roadClass: g.roadClass, originalClass: g.roadClass, polylines: [], baseStyle: g.style, latlngsList: [] };
@@ -1779,7 +1911,6 @@
     applyRoadClassOverrides();
     applyRoadCoverageStyling();
     drawStoredManualRoads();
-    syncRoadGeometryToCloud();
     if(bounds.length){
       roadBounds = L.latLngBounds(bounds);
       if(!hasCenteredOnce){
@@ -1794,57 +1925,6 @@
   // (via road-coverage.json). Ainsi, plus besoin de recontacter OpenStreetMap
   // au quotidien — utile si la connexion est mauvaise ou si le service est
   // indisponible.
-  var geometrySyncPending = false;
-  // Réduit la précision des coordonnées à 5 décimales (~1m, largement
-  // suffisant pour l'affichage) et retire les points consécutifs devenus
-  // identiques après arrondi — l'API GitHub refuse de lire un fichier de
-  // plus de 1 Mo, et stocker la géométrie complète de nombreuses routes en
-  // pleine précision (15 décimales) fait très vite dépasser cette limite.
-  function roundGeometry(node){
-    if(!Array.isArray(node)) return node;
-    if(node.length === 2 && typeof node[0] === 'number' && typeof node[1] === 'number'){
-      return [Math.round(node[0] * 1e5) / 1e5, Math.round(node[1] * 1e5) / 1e5];
-    }
-    var mapped = node.map(roundGeometry);
-    // Une seule étape de dédoublonnage, sur les tableaux de points (pas sur
-    // les tableaux de lignes) : évite de fusionner des lignes distinctes.
-    if(mapped.length && Array.isArray(mapped[0]) && typeof mapped[0][0] === 'number'){
-      var deduped = [];
-      mapped.forEach(function(p){
-        var last = deduped[deduped.length - 1];
-        if(!last || last[0] !== p[0] || last[1] !== p[1]) deduped.push(p);
-      });
-      return deduped;
-    }
-    return mapped;
-  }
-
-  function syncRoadGeometryToCloud(){
-    if(geometrySyncPending) return;
-    var changed = false;
-    Object.keys(roadsIndex).forEach(function(key){
-      var entry = roadsIndex[key];
-      var cov = roadCoverage[key];
-      if(!cov){ cov = {}; roadCoverage[key] = cov; }
-      var roundedGeom = roundGeometry(entry.latlngsList);
-      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(roundedGeom) || cov.originalClass !== entry.originalClass){
-        cov.latlngsList = roundedGeom;
-        cov.label = entry.label;
-        cov.source = cov.source || 'osm';
-        // Indispensable pour reconstruire correctement RD/RN/privé quand on
-        // repart uniquement de la mémoire (sans repasser par OSM) : sans ça,
-        // toutes les routes retombaient par défaut en "Communale".
-        cov.originalClass = entry.originalClass;
-        changed = true;
-      }
-    });
-    if(!changed || !sessionToken) return;
-    geometrySyncPending = true;
-    saveRoadCoverage()
-      .catch(function(){ /* on retentera au prochain chargement */ })
-      .finally(function(){ geometrySyncPending = false; });
-  }
-
   // Reconstruit sur la carte les routes ajoutées manuellement (sans lien avec
   // OpenStreetMap), à partir de la géométrie mémorisée sur GitHub.
   function drawStoredManualRoads(){
@@ -1864,6 +1944,31 @@
       roadsIndex[key] = entry;
     });
     applyRoadClassOverrides();
+    applyRoadCoverageStyling();
+  }
+
+  // Applique les tracés ajustés manuellement (📏 Modifier le tracé) sur les
+  // routes déjà affichées — nécessaire car les routes se chargent (BD TOPO)
+  // avant que la mémoire des ajustements (roadCoverage) ne soit disponible :
+  // sans cette étape, un tracé personnalisé enregistré lors d'une session
+  // précédente resterait invisible tant que l'admin ne rouvrait pas la route.
+  function applyCustomGeometryOverrides(){
+    Object.keys(roadCoverage).forEach(function(key){
+      var cov = roadCoverage[key];
+      var customGeom = cov.customGeometry;
+      var entry = roadsIndex[key];
+      if(!customGeom || customGeom.length < 2 || !entry) return;
+      if(entry.latlngsList.length === 1 && JSON.stringify(entry.latlngsList[0]) === JSON.stringify(customGeom)) return; // déjà appliqué
+      entry.polylines.forEach(function(line){
+        [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); });
+      });
+      var newLine = L.polyline(customGeom, entry.baseStyle);
+      var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+      newLine.addTo(targetLayer);
+      newLine.on('click', function(){ openRoadQuickView(key); });
+      entry.polylines = [newLine];
+      entry.latlngsList = [customGeom];
+    });
     applyRoadCoverageStyling();
   }
 
@@ -2746,6 +2851,7 @@
   });
   document.getElementById('btnCancelDrawRoad').addEventListener('click', cancelDrawRoad);
   document.getElementById('btnFinishDrawRoad').addEventListener('click', finishDrawRoad);
+  document.getElementById('btnRemoveLastPoint').addEventListener('click', removeLastDrawingPoint);
 
   document.getElementById('btnBackfillRefNumbers').addEventListener('click', async function(){
     var missing = signalements.filter(function(s){ return !s.refNumber; });
