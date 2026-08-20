@@ -82,7 +82,7 @@
   <a href="index.html">← Retour à la carte</a>
 </div>
 
-<div id="loadStatus" class="loadingMsg">Chargement des routes depuis OpenStreetMap…</div>
+<div id="loadStatus" class="loadingMsg">Chargement des routes (BD TOPO)…</div>
 
 <div id="map"></div>
 
@@ -158,10 +158,9 @@
 
   var highlightLayer = L.layerGroup().addTo(map);
 
-  // ---- Récupération des routes depuis OpenStreetMap (3 serveurs en parallèle) ----
-  // Relais via le Worker Cloudflare plutôt qu'un appel direct au navigateur :
-  // certains réseaux/limitations anti-abus d'Overpass bloquent les requêtes
-  // directes, alors que l'infrastructure Cloudflare y accède normalement.
+  // ---- Récupération des routes depuis la BD TOPO de l'IGN ----
+  // Relais via le Worker Cloudflare (infrastructure officielle française,
+  // indépendante d'OSM/Overpass).
   function fetchFromBdTopo(bbox, onSuccess, onFail, timeoutMs){
     timeoutMs = timeoutMs || 15000;
     var controller = new AbortController();
@@ -188,14 +187,17 @@
     });
   }
 
-  function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 38000;
+  // ---- Récupération des routes depuis la BD TOPO de l'IGN ----
+  // Relais via le Worker Cloudflare (infrastructure officielle française,
+  // indépendante d'OSM/Overpass).
+  function fetchFromBdTopo(bbox, onSuccess, onFail, timeoutMs){
+    timeoutMs = timeoutMs || 15000;
     var controller = new AbortController();
     var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-    fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/bdtopo-proxy'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: query }),
+      body: JSON.stringify({ bbox: bbox }),
       signal: controller.signal
     })
     .then(function(r){
@@ -209,7 +211,7 @@
     })
     .catch(function(err){
       clearTimeout(to);
-      console.warn('Relais Overpass (Worker) en échec:', err);
+      console.warn('Relais BD TOPO (IGN) en échec:', err);
       onFail();
     });
   }
@@ -235,19 +237,56 @@
   var queue = [];
   var queueIndex = 0;
 
+  // Recolle les tronçons d'une même route qui se touchent (même logique que
+  // pour le contour communal), avec une tolérance de ~2m pour absorber les
+  // petites imprécisions entre tronçons BD TOPO adjacents à une intersection
+  // — indispensable pour qu'une route reste visuellement en un seul morceau.
+  function stitchSegmentsLoose(segments){
+    var segs = segments.map(function(s){ return s.slice(); });
+    var rings = [];
+    function eq(a, b){ return Math.abs(a[0]-b[0]) < 0.00002 && Math.abs(a[1]-b[1]) < 0.00002; }
+    while(segs.length){
+      var ring = segs.shift();
+      var changed = true;
+      while(changed){
+        changed = false;
+        for(var i = 0; i < segs.length; i++){
+          var s = segs[i];
+          var ringStart = ring[0], ringEnd = ring[ring.length-1];
+          var sStart = s[0], sEnd = s[s.length-1];
+          if(eq(ringEnd, sStart)){ ring = ring.concat(s.slice(1)); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringEnd, sEnd)){ ring = ring.concat(s.slice().reverse().slice(1)); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringStart, sEnd)){ ring = s.slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringStart, sStart)){ ring = s.slice().reverse().slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
+        }
+      }
+      rings.push(ring);
+    }
+    return rings;
+  }
+
   function buildRoadsIndex(osmData){
-    roadsIndex = {};
+    var grouped = {};
     (osmData.elements || []).forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
       var tags = el.tags || {};
-      var roadClass = classifyRoad(tags);
-      var label = tags.name ? tags.name : ('Voie sans nom (' + (tags.highway || '?') + ')');
       var key = roadKeyFor(tags, el.id);
-      var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
-      if(!roadsIndex[key]){
-        roadsIndex[key] = { key: key, label: label, roadClass: roadClass, originalClass: roadClass, latlngsList: [] };
+      if(!grouped[key]){
+        grouped[key] = {
+          roadClass: classifyRoad(tags),
+          label: tags.name ? tags.name : ('Voie sans nom (' + (tags.highway || '?') + ')'),
+          rawLines: []
+        };
       }
-      roadsIndex[key].latlngsList.push(latlngs);
+      grouped[key].rawLines.push(el.geometry.map(function(pt){ return [pt.lat, pt.lon]; }));
+    });
+    roadsIndex = {};
+    Object.keys(grouped).forEach(function(key){
+      var g = grouped[key];
+      roadsIndex[key] = {
+        key: key, label: g.label, roadClass: g.roadClass, originalClass: g.roadClass,
+        latlngsList: stitchSegmentsLoose(g.rawLines)
+      };
     });
     syncGeometryToCloud();
   }
@@ -291,39 +330,12 @@
   }
 
   function loadRoadsFromOsm(){
-    // La BD TOPO de l'IGN est essayée en premier (source officielle,
-    // infrastructure indépendante d'Overpass). Overpass ne sert plus que de
-    // repli si l'IGN est aussi indisponible.
     fetchFromBdTopo(BBOX, function(data){
       buildRoadsIndex(data);
       afterRoadsLoaded();
     }, function(){
-      loadRoadsBbox();
+      document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter la BD TOPO (IGN). Réessayez dans quelques minutes.';
     }, 15000);
-  }
-  function loadRoadsInsee(){
-    var queryInsee =
-      '[out:json][timeout:25];' +
-      'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
-      'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|construction|proposed)$"];' +
-      'out geom;';
-    fetchFromOverpass(queryInsee, function(data){
-      buildRoadsIndex(data);
-      afterRoadsLoaded();
-    }, function(){
-      document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.';
-    }, 38000);
-  }
-  function loadRoadsBbox(){
-    var query =
-      '[out:json][timeout:25]' +
-      '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
-      'way["highway"]["highway"!~"^(footway|cycleway|steps|construction|proposed)$"];' +
-      'out geom;';
-    fetchFromOverpass(query, function(data){
-      buildRoadsIndex(data);
-      afterRoadsLoaded();
-    }, loadRoadsInsee, 38000);
   }
 
   function roadCoverageApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/road-coverage'); }
@@ -382,7 +394,7 @@
   }
 
   // Reconstruit roadsIndex directement depuis la géométrie mémorisée sur
-  // GitHub — pas besoin de recontacter OpenStreetMap une fois que les routes
+  // GitHub — pas besoin de recontacter la BD TOPO une fois que les routes
   // ont déjà été chargées au moins une fois par n'importe qui.
   function rebuildFromCache(){
     var found = false;
