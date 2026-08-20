@@ -288,45 +288,9 @@
         latlngsList: stitchSegmentsLoose(g.rawLines)
       };
     });
-    syncGeometryToCloud();
-  }
-
-  // Réduit la précision des coordonnées à 5 décimales (~1m) et retire les
-  // doublons consécutifs — l'API GitHub refuse de lire un fichier de plus de
-  // 1 Mo, vite dépassé en pleine précision avec beaucoup de routes.
-  function roundGeometry(node){
-    if(!Array.isArray(node)) return node;
-    if(node.length === 2 && typeof node[0] === 'number' && typeof node[1] === 'number'){
-      return [Math.round(node[0] * 1e5) / 1e5, Math.round(node[1] * 1e5) / 1e5];
-    }
-    var mapped = node.map(roundGeometry);
-    if(mapped.length && Array.isArray(mapped[0]) && typeof mapped[0][0] === 'number'){
-      var deduped = [];
-      mapped.forEach(function(p){
-        var last = deduped[deduped.length - 1];
-        if(!last || last[0] !== p[0] || last[1] !== p[1]) deduped.push(p);
-      });
-      return deduped;
-    }
-    return mapped;
-  }
-
-  function syncGeometryToCloud(){
-    var changed = false;
-    Object.keys(roadsIndex).forEach(function(key){
-      var entry = roadsIndex[key];
-      var cov = roadCoverage[key];
-      if(!cov){ cov = {}; roadCoverage[key] = cov; }
-      var roundedGeom = roundGeometry(entry.latlngsList);
-      if(!cov.latlngsList || JSON.stringify(cov.latlngsList) !== JSON.stringify(roundedGeom) || cov.originalClass !== entry.originalClass){
-        cov.latlngsList = roundedGeom;
-        cov.label = entry.label;
-        cov.source = cov.source || 'osm';
-        cov.originalClass = entry.originalClass;
-        changed = true;
-      }
-    });
-    if(changed) saveRoadCoverage().catch(function(){ /* on retentera plus tard */ });
+    // La géométrie BD TOPO n'est plus mémorisée sur GitHub (rechargée à
+    // chaque fois depuis l'IGN, fiable désormais) — seule celle des routes
+    // tracées manuellement l'est encore, gérée dans saveRoadCoverage.
   }
 
   function loadRoadsFromOsm(){
@@ -359,7 +323,8 @@
           latlngsList: item.latlngsList || null,
           label: item.label || null,
           source: item.source || 'osm',
-          originalClass: item.originalClass || null
+          originalClass: item.originalClass || null,
+          customGeometry: item.customGeometry || null
         };
       });
     } catch(e){ console.warn('Erreur chargement couverture des routes', e); }
@@ -368,12 +333,21 @@
   async function saveRoadCoverage(){
     var items = Object.keys(roadCoverage).map(function(key){
       var e = roadCoverage[key];
-      return {
+      var item = {
         key: key, covered: !!e.covered, by: e.by, at: e.at,
         customName: e.customName || null, customClass: e.customClass || null,
-        hidden: !!e.hidden, reviewed: !!e.reviewed,
-        latlngsList: e.latlngsList || null, label: e.label || null, source: e.source || 'osm', originalClass: e.originalClass || null
+        hidden: !!e.hidden, reviewed: !!e.reviewed, originalClass: e.originalClass || null
       };
+      // Géométrie mémorisée UNIQUEMENT pour les routes tracées manuellement
+      // (créées depuis l'appli principale) — sinon le fichier dépasse vite la
+      // limite de 1 Mo de l'API GitHub.
+      if(e.source === 'manual'){
+        item.latlngsList = e.latlngsList || null;
+        item.label = e.label || null;
+        item.source = 'manual';
+      }
+      if(e.customGeometry) item.customGeometry = e.customGeometry;
+      return item;
     });
     var resp = await fetch(roadCoverageApiUrl(), {
       method: 'PUT',
@@ -393,38 +367,41 @@
     return cls === 'RD' ? 'Départementale (RD)' : (cls === 'RN' ? 'Nationale (RN)' : (cls === 'PATH' ? 'Chemin de terre / privé' : 'Communale (RC)'));
   }
 
-  // Reconstruit roadsIndex directement depuis la géométrie mémorisée sur
-  // GitHub — pas besoin de recontacter la BD TOPO une fois que les routes
-  // ont déjà été chargées au moins une fois par n'importe qui.
-  function rebuildFromCache(){
-    var found = false;
-    roadsIndex = {};
+  // Fusionne les routes tracées manuellement (mémorisées avec leur géométrie
+  // propre, seule source où elles existent) dans roadsIndex, en plus de
+  // celles chargées depuis la BD TOPO.
+  function mergeManualRoads(){
     Object.keys(roadCoverage).forEach(function(key){
       var cov = roadCoverage[key];
-      if(!cov.latlngsList || !cov.latlngsList.length) return;
-      found = true;
-      var originalClass = cov.source === 'manual' ? (cov.customClass || 'RC') : (cov.originalClass || 'RC');
+      if(cov.source !== 'manual' || !cov.latlngsList || !cov.latlngsList.length || roadsIndex[key]) return;
+      var originalClass = cov.customClass || 'RC';
       roadsIndex[key] = {
         key: key, label: cov.label || cov.customName || key,
-        roadClass: cov.customClass || originalClass, originalClass: originalClass,
+        roadClass: originalClass, originalClass: originalClass,
         latlngsList: cov.latlngsList
       };
     });
-    return found;
+  }
+
+  // Applique les tracés ajustés manuellement (depuis l'appli principale) sur
+  // les routes déjà chargées ici, pour que l'aperçu de revue reste fidèle.
+  function applyCustomGeometryOverrides(){
+    Object.keys(roadCoverage).forEach(function(key){
+      var cov = roadCoverage[key];
+      var entry = roadsIndex[key];
+      if(!cov.customGeometry || cov.customGeometry.length < 2 || !entry) return;
+      entry.latlngsList = [cov.customGeometry];
+    });
   }
 
   async function boot(){
-    await loadRoadCoverage();
-    if(rebuildFromCache()){
-      document.getElementById('loadStatus').classList.add('hidden');
-      buildQueue();
-      showCurrent();
-    } else {
-      loadRoadsFromOsm();
-    }
+    loadRoadsFromOsm();
   }
 
   async function afterRoadsLoaded(){
+    await loadRoadCoverage();
+    mergeManualRoads();
+    applyCustomGeometryOverrides();
     document.getElementById('loadStatus').classList.add('hidden');
     buildQueue();
     showCurrent();
