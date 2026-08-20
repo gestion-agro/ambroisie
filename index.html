@@ -9,7 +9,7 @@
   script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.sheetjs.com;
   style-src 'self' 'unsafe-inline' https://unpkg.com;
   img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com https://data.geopf.fr;
-  connect-src 'self' https://ambroisie-belsentes-api.clement-thieuleux.workers.dev https://overpass-api.de https://overpass.kumi.systems https://overpass.openstreetmap.ru;
+  connect-src 'self' https://ambroisie-belsentes-api.clement-thieuleux.workers.dev;
   frame-ancestors 'none';
   base-uri 'self';
   form-action 'self';
@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-c</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-d</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -882,22 +882,17 @@
     document.getElementById('loading').classList.add('hidden');
   }
 
-  // ---- Charger les routes de la commune via Overpass (OpenStreetMap) ----
+  // ---- Charger les routes de la commune (via la BD TOPO de l'IGN) ----
   var CACHE_KEY = 'ambroisie_routes_belsentes_v3';
   var CACHE_MAX_AGE_DAYS = 90;
 
-  // Code INSEE de Belsentes — permet d'interroger Overpass sur le contour
-  // administratif RÉEL de la commune plutôt qu'un simple rectangle, qui
-  // débordait sur les communes voisines.
+  // Code INSEE de Belsentes — utilisé pour récupérer le contour administratif
+  // précis de la commune (API officielle geo.api.gouv.fr).
   var INSEE_CODE = "07165";
-  // Identifiant de la relation OpenStreetMap correspondant à Belsentes (retrouvé
-  // via la fiche Wikidata Q59695357, propriété "OpenStreetMap relation ID"),
-  // qui est aussi la relation utilisée par la carte Wikipédia. Bien plus fiable
-  // qu'une recherche par tags, qui pouvait remonter l'ancienne commune déléguée.
-  var OSM_RELATION_ID = "9105126";
-  // Boîte englobante de secours, utilisée uniquement si la requête par
-  // contour administratif échoue ou ne renvoie rien (ex: tag manquant dans OSM).
+  // Boîte englobante utilisée pour interroger les routes (BD TOPO) autour de
+  // la commune.
   var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
+
 
   // ================= SUIVI DE COUVERTURE DES ROUTES =================
   function roadCoverageApiUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/road-coverage'); }
@@ -1310,46 +1305,13 @@
     });
   }
 
-  // Essaie d'abord le contour administratif précis (code INSEE) ; si ça échoue
-  // ou ne renvoie aucune route, se replie sur la boîte englobante (moins précis
-  // mais garantit un affichage). Le callback reçoit aussi la provenance ('insee'
-  // ou 'bbox') pour que l'appelant sache si le résultat est fiable à long terme.
+  // La BD TOPO de l'IGN (data.geopf.fr) est la seule source pour les routes :
+  // infrastructure officielle française, indépendante d'OSM/Overpass, qui
+  // héberge déjà le cadastre utilisé ailleurs dans l'appli de façon fiable.
   function loadRoadsData(onSuccess, onFail){
-    // La BD TOPO de l'IGN (data.geopf.fr) est essayée en premier : source
-    // officielle française, infrastructure indépendante d'OSM/Overpass (déjà
-    // utilisée pour le cadastre, qui fonctionne de manière fiable).
-    // Overpass ne sert plus que de repli si l'IGN est aussi indisponible.
     fetchFromBdTopo(BBOX, function(data){
       onSuccess(data, 'bdtopo');
-    }, function(){
-      loadRoadsFromOverpass(onSuccess, onFail);
-    }, 15000);
-  }
-
-  function loadRoadsFromOverpass(onSuccess, onFail){
-    // La requête par boîte géographique (bbox) est bien plus rapide et légère
-    // pour Overpass que la recherche par zone administrative (area["ref:INSEE"]),
-    // documentée comme l'une des opérations les plus coûteuses de leur moteur.
-    // On l'essaie donc en premier — elle couvre largement la commune, et le
-    // découpage précis se fait déjà côté appli (clipLineToCommune).
-    var queryBbox =
-      '[out:json][timeout:25]' +
-      '[bbox:' + BBOX.south + ',' + BBOX.west + ',' + BBOX.north + ',' + BBOX.east + '];' +
-      'way["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
-      'out body geom;';
-
-    fetchFromOverpass(queryBbox, function(data){
-      onSuccess(data, 'bbox');
-    }, function(){
-      // Repli sur la requête par zone administrative (plus lente, mais parfois
-      // seule à fonctionner selon l'état du serveur ce jour-là).
-      var queryInsee =
-        '[out:json][timeout:25];' +
-        'area["ref:INSEE"="' + INSEE_CODE + '"]->.a;' +
-        'way(area.a)["highway"]["highway"!~"^(footway|cycleway|steps|path|construction|proposed)$"];' +
-        'out body geom;';
-      fetchFromOverpass(queryInsee, function(data2){ onSuccess(data2, 'insee'); }, onFail, 38000);
-    }, 38000);
+    }, onFail, 15000);
   }
 
   function saveCache(data, precision){
@@ -1386,30 +1348,6 @@
     });
   }
   drawBoundaryRings(communeRings);
-
-  function stitchSegments(segments){
-    var segs = segments.map(function(s){ return s.slice(); });
-    var rings = [];
-    function eq(a, b){ return Math.abs(a[0]-b[0]) < 1e-7 && Math.abs(a[1]-b[1]) < 1e-7; }
-    while(segs.length){
-      var ring = segs.shift();
-      var changed = true;
-      while(changed){
-        changed = false;
-        for(var i = 0; i < segs.length; i++){
-          var s = segs[i];
-          var ringStart = ring[0], ringEnd = ring[ring.length-1];
-          var sStart = s[0], sEnd = s[s.length-1];
-          if(eq(ringEnd, sStart)){ ring = ring.concat(s.slice(1)); segs.splice(i,1); changed = true; break; }
-          else if(eq(ringEnd, sEnd)){ ring = ring.concat(s.slice().reverse().slice(1)); segs.splice(i,1); changed = true; break; }
-          else if(eq(ringStart, sEnd)){ ring = s.slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
-          else if(eq(ringStart, sStart)){ ring = s.slice().reverse().slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
-        }
-      }
-      rings.push(ring);
-    }
-    return rings;
-  }
 
   function pointInRing(lat, lon, ring){
     var inside = false;
@@ -1455,23 +1393,59 @@
     return segments;
   }
 
-  function processBoundaryData(osmData){
-    var rels = (osmData.elements || []).filter(function(e){ return e.type === 'relation' && e.members; });
-    if(rels.length === 0) return;
-    // Par précaution : si plusieurs relations correspondent (ex: ancienne commune
-    // déléguée avant fusion partageant le même code INSEE), on garde celle avec
-    // le contour le plus étendu, qui correspond à la commune actuelle fusionnée.
-    var rel = rels.reduce(function(best, r){
-      var pts = r.members.reduce(function(sum, m){ return sum + (m.geometry ? m.geometry.length : 0); }, 0);
-      return (!best || pts > best._pts) ? Object.assign({_pts: pts}, r) : best;
-    }, null);
-    var segments = rel.members
-      .filter(function(m){ return m.role === 'outer' && m.geometry && m.geometry.length > 1; })
-      .map(function(m){ return m.geometry.map(function(p){ return [p.lat, p.lon]; }); });
-    if(segments.length === 0) return;
-    communeRings = stitchSegments(segments);
+  // Convertit une géométrie GeoJSON (Polygon ou MultiPolygon, coordonnées en
+  // [lon,lat]) au format utilisé dans l'appli : une liste d'anneaux, chacun
+  // une liste de points [lat,lon]. Les trous éventuels (îlots à l'intérieur
+  // d'un polygone) sont ignorés, comme c'était déjà le cas auparavant.
+  function extractRingsFromGeoJSON(geometry){
+    if(!geometry) return [];
+    var rings = [];
+    if(geometry.type === 'Polygon'){
+      if(geometry.coordinates[0]) rings.push(geometry.coordinates[0].map(function(c){ return [c[1], c[0]]; }));
+    } else if(geometry.type === 'MultiPolygon'){
+      geometry.coordinates.forEach(function(poly){
+        if(poly[0]) rings.push(poly[0].map(function(c){ return [c[1], c[0]]; }));
+      });
+    }
+    return rings;
+  }
+
+  function processBoundaryData(geometry){
+    var rings = extractRingsFromGeoJSON(geometry);
+    if(rings.length === 0) return;
+    communeRings = rings;
     hasPreciseBoundary = true;
     drawBoundaryRings(communeRings);
+  }
+
+  // Contour précis de la commune via l'API officielle "Découpage
+  // administratif" du gouvernement français (geo.api.gouv.fr, basée sur
+  // l'IGN Admin Express) — infrastructure indépendante d'OSM/Overpass,
+  // interrogée simplement par code INSEE.
+  function fetchCommuneBoundary(onSuccess, onFail, timeoutMs){
+    timeoutMs = timeoutMs || 15000;
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/commune-boundary-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ insee: INSEE_CODE }),
+      signal: controller.signal
+    })
+    .then(function(r){
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data && data.error) throw new Error(data.error);
+      onSuccess(data.geometry);
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Relais contour commune en échec:', err);
+      onFail();
+    });
   }
 
   function loadCommuneBoundary(){
@@ -1489,10 +1463,9 @@
       }
     } catch(e){ console.warn('Lecture cache contour impossible', e); }
 
-    var query = '[out:json][timeout:15];relation(' + OSM_RELATION_ID + ');out geom;';
-    fetchFromOverpass(query, function(data){
-      processBoundaryData(data);
-      try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: data })); }
+    fetchCommuneBoundary(function(geometry){
+      processBoundaryData(geometry);
+      try{ localStorage.setItem(BOUNDARY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: geometry })); }
       catch(e){ console.warn('Sauvegarde cache contour impossible', e); }
     }, function(){
       if(staleBoundary){
@@ -1502,11 +1475,11 @@
         // Le contour de secours intégré (FALLBACK_BOUNDARY_RINGS) reste
         // affiché dans tous les cas — on n'a juste pas pu le remplacer par une
         // version plus précise. On informe visiblement (pas seulement dans la
-        // console) que les routes/contour précis n'ont pas pu être chargés.
-        console.warn('Impossible de contacter OpenStreetMap : le contour de secours intégré reste affiché (moins précis que la version en ligne).');
+        // console) que le contour précis n'a pas pu être chargé.
+        console.warn('Impossible de contacter le service de contour communal : le contour de secours intégré reste affiché (moins précis).');
         showNetworkWarningBanner();
       }
-    }, 38000);
+    }, 15000);
   }
 
   var networkWarningShown = false;
@@ -1516,7 +1489,7 @@
     var banner = document.createElement('div');
     banner.id = 'networkWarningBanner';
     banner.style.cssText = 'position:fixed;left:10px;right:10px;top:72px;z-index:1450;background:#fbeecd;color:#8a5a1f;border:2px solid #8a5a1f;border-radius:10px;padding:10px 14px;font-size:12px;box-shadow:2px 2px 0 rgba(0,0,0,.15);';
-    banner.innerHTML = '⚠️ Impossible de contacter OpenStreetMap (réseau/pare-feu ?). Les routes et le contour précis ne se sont pas chargés — une version de secours moins précise reste affichée. <button id="btnDismissNetworkWarning" style="margin-left:8px;background:none;border:1px solid #8a5a1f;border-radius:6px;padding:3px 8px;cursor:pointer;color:#8a5a1f;">OK</button>';
+    banner.innerHTML = '⚠️ Impossible de contacter le service de contour communal (réseau/pare-feu ?). Le contour précis ne s\'est pas chargé — une version de secours moins précise reste affichée. <button id="btnDismissNetworkWarning" style="margin-left:8px;background:none;border:1px solid #8a5a1f;border-radius:6px;padding:3px 8px;cursor:pointer;color:#8a5a1f;">OK</button>';
     document.body.appendChild(banner);
     document.getElementById('btnDismissNetworkWarning').addEventListener('click', function(){
       banner.remove();
@@ -1527,13 +1500,10 @@
     'Merci de faire ce signalement directement sur la plateforme nationale :\n' +
     'https://signalement-ambroisie.atlasante.fr/dashboard';
 
-  // Passe désormais par le Worker Cloudflare, qui relaie lui-même la requête
-  // vers Overpass depuis son infrastructure — évite les blocages/limitations
-  // qui peuvent toucher certains réseaux ou navigateurs directement, et le
-  // Worker gère lui-même les 3 serveurs de secours côté serveur.
-  // Relais vers la BD TOPO de l'IGN (source officielle française,
-  // indépendante d'OSM/Overpass) — essayée en premier, Overpass ne sert plus
-  // que de repli si jamais data.geopf.fr est aussi indisponible.
+  // Seule source pour les routes : la BD TOPO de l'IGN (source officielle
+  // française, indépendante d'OSM/Overpass), relayée par le Worker Cloudflare
+  // (qui fait la requête depuis son infrastructure plutôt que depuis le
+  // navigateur du conseiller).
   function fetchFromBdTopo(bbox, onSuccess, onFail, timeoutMs){
     timeoutMs = timeoutMs || 15000;
     var controller = new AbortController();
@@ -1560,34 +1530,11 @@
     });
   }
 
-  function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 38000;
-    var controller = new AbortController();
-    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-    fetch(CONFIG.WORKER_URL.replace('/signalements', '/overpass-proxy'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: query }),
-      signal: controller.signal
-    })
-    .then(function(r){
-      clearTimeout(to);
-      if(!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(data){
-      if(data && data.error) throw new Error(data.error);
-      onSuccess(data);
-    })
-    .catch(function(err){
-      clearTimeout(to);
-      console.warn('Relais Overpass (Worker) en échec:', err);
-      onFail();
-    });
-  }
-
-  // Classification approximative RC / RD / RN, basée sur le numéro de route (ref),
-  // OSM n'ayant pas de tag direct "gestionnaire de la voie".
+  // Classification RC / chemin de terre, basée sur le type de voie détecté
+  // par la BD TOPO (nature du tronçon). La distinction communale /
+  // départementale / nationale n'est PAS déduite automatiquement (testé, pas
+  // fiable) — tout part en "Communale" par défaut, à corriger manuellement
+  // via la page de classification dédiée.
   function classifyRoad(tags){
     var ref = (tags.ref || '').trim();
     if(/^D\s?\d/i.test(ref)) return 'RD';
@@ -1746,43 +1693,89 @@
     return segments;
   }
 
+  // Comme stitchSegments, mais avec une tolérance plus généreuse (~2m) : les
+  // tronçons BD TOPO adjacents à une intersection ne partagent pas toujours
+  // une coordonnée EXACTEMENT identique (imprécision native des données, ou
+  // arrondi appliqué avant stockage) — sans cette tolérance, deux bouts
+  // d'une même route restaient visuellement détachés.
+  function stitchSegmentsLoose(segments){
+    var segs = segments.map(function(s){ return s.slice(); });
+    var rings = [];
+    function eq(a, b){ return Math.abs(a[0]-b[0]) < 0.00002 && Math.abs(a[1]-b[1]) < 0.00002; }
+    while(segs.length){
+      var ring = segs.shift();
+      var changed = true;
+      while(changed){
+        changed = false;
+        for(var i = 0; i < segs.length; i++){
+          var s = segs[i];
+          var ringStart = ring[0], ringEnd = ring[ring.length-1];
+          var sStart = s[0], sEnd = s[s.length-1];
+          if(eq(ringEnd, sStart)){ ring = ring.concat(s.slice(1)); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringEnd, sEnd)){ ring = ring.concat(s.slice().reverse().slice(1)); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringStart, sEnd)){ ring = s.slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
+          else if(eq(ringStart, sStart)){ ring = s.slice().reverse().slice(0,-1).concat(ring); segs.splice(i,1); changed = true; break; }
+        }
+      }
+      rings.push(ring);
+    }
+    return rings;
+  }
+
   function drawRoads(osmData){
     if(!osmData.elements || osmData.elements.length === 0){
-      showLoadError('Aucune route trouvée autour de Belsentes dans OpenStreetMap pour le moment.');
+      showLoadError('Aucune route trouvée pour Belsentes pour le moment.');
       return;
     }
     var bounds = [];
     roadsIndex = {};
+
+    // Étape 1 : regrouper TOUS les tronçons bruts par route (même clé), sans
+    // encore rien découper ni dessiner — indispensable pour pouvoir les
+    // recoller correctement à l'étape suivante.
+    var grouped = {}; // key -> { tags, label, roadClass, style, rawLines: [...] }
     osmData.elements.forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
-      // Avec le vrai contour précis : découpage strict aux limites de la
-      // commune. Avec le contour de secours (approximatif) : découpage avec
-      // une marge de tolérance, pour éviter de couper à tort de vraies
-      // routes tout en excluant les communes clairement voisines.
-      var clipped = hasPreciseBoundary ? clipLineToCommune(latlngs) : clipLineToCommuneWithMargin(latlngs);
-      if(clipped.length === 0) return; // route entièrement hors commune : on ne l'affiche pas
       var tags = el.tags || {};
-      var roadClass = classifyRoad(tags);
-      var style = roadStyle(tags.highway, roadClass);
-      var line = L.polyline(clipped, style);
-      var label = tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')');
-      var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
-      line.addTo(targetLayer);
-      clipped.forEach(function(seg){ seg.forEach(function(p){ bounds.push(p); }); });
-
-      // Les chemins de terre/privés (PATH) restent exclus de la liste "Suivi
-      // des routes" par défaut (indicatif, hors ressort de l'arrachage), mais
-      // peuvent quand même être marqués "parcourus" directement au toucher sur
-      // la carte — ils apparaîtront alors dans la liste une fois marqués.
       var key = roadKeyFor(tags, el.id);
-      if(!roadsIndex[key]){
-        roadsIndex[key] = { key: key, label: label, roadClass: roadClass, originalClass: roadClass, polylines: [], baseStyle: style, latlngsList: [] };
+      if(!grouped[key]){
+        var roadClass = classifyRoad(tags);
+        grouped[key] = {
+          tags: tags, roadClass: roadClass, style: roadStyle(tags.highway, roadClass),
+          label: tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')'),
+          rawLines: []
+        };
       }
-      roadsIndex[key].polylines.push(line);
-      roadsIndex[key].latlngsList.push(clipped);
-      line.on('click', function(){ openRoadQuickView(key); });
+      grouped[key].rawLines.push(latlngs);
     });
+
+    // Étape 2 : pour chaque route, recoller ses tronçons entre eux (une route
+    // doit rester en un seul morceau visuellement), PUIS découper aux
+    // limites de la commune — dans cet ordre, pour ne pas réintroduire de
+    // fausses coupures aux jonctions entre tronçons.
+    Object.keys(grouped).forEach(function(key){
+      var g = grouped[key];
+      var stitched = stitchSegmentsLoose(g.rawLines);
+      var finalSegments = [];
+      stitched.forEach(function(line){
+        var clipped = hasPreciseBoundary ? clipLineToCommune(line) : clipLineToCommuneWithMargin(line);
+        clipped.forEach(function(seg){ finalSegments.push(seg); });
+      });
+      if(finalSegments.length === 0) return; // route entièrement hors commune
+
+      roadsIndex[key] = { key: key, label: g.label, roadClass: g.roadClass, originalClass: g.roadClass, polylines: [], baseStyle: g.style, latlngsList: [] };
+      var targetLayer = g.roadClass === 'RD' ? roadsLayerRD : (g.roadClass === 'RN' ? roadsLayerRN : (g.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+      finalSegments.forEach(function(seg){
+        var line = L.polyline(seg, g.style);
+        line.addTo(targetLayer);
+        line.on('click', function(){ openRoadQuickView(key); });
+        roadsIndex[key].polylines.push(line);
+        roadsIndex[key].latlngsList.push(seg);
+        seg.forEach(function(p){ bounds.push(p); });
+      });
+    });
+
     applyRoadClassOverrides();
     applyRoadCoverageStyling();
     drawStoredManualRoads();
