@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-b</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-c</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1426,6 +1426,35 @@
     return communeRings.some(function(ring){ return pointInRing(lat, lon, ring); });
   }
 
+  // Comme isInsideCommune, mais avec une marge de tolérance (~300m) : un
+  // point est considéré "dans la commune" s'il est dans le contour, OU à
+  // moins de 300m d'un point qui y est. Utile UNIQUEMENT avec le contour de
+  // secours (approximatif) : ça évite de couper à tort de vraies portions de
+  // route quand l'approximation "mord" légèrement sur le tracé réel, tout en
+  // restant assez proche pour ne pas afficher les communes voisines en
+  // entier (contrairement à ne découper à rien).
+  var MARGIN_DEG = 0.0027; // environ 300m en latitude à cette latitude
+  function isInsideCommuneWithMargin(lat, lon){
+    if(isInsideCommune(lat, lon)) return true;
+    var offsets = [[MARGIN_DEG,0],[-MARGIN_DEG,0],[0,MARGIN_DEG],[0,-MARGIN_DEG]];
+    return offsets.some(function(o){ return isInsideCommune(lat + o[0], lon + o[1]); });
+  }
+
+  function clipLineToCommuneWithMargin(latlngs){
+    var segments = [];
+    var current = [];
+    latlngs.forEach(function(p){
+      if(isInsideCommuneWithMargin(p[0], p[1])){
+        current.push(p);
+      } else if(current.length){
+        segments.push(current);
+        current = [];
+      }
+    });
+    if(current.length) segments.push(current);
+    return segments;
+  }
+
   function processBoundaryData(osmData){
     var rels = (osmData.elements || []).filter(function(e){ return e.type === 'relation' && e.members; });
     if(rels.length === 0) return;
@@ -1727,11 +1756,11 @@
     osmData.elements.forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
-      // On ne découpe aux limites de la commune que si on a le vrai contour
-      // précis — avec le contour de secours (approximatif), le découpage
-      // coupait à tort de vraies portions de route là où l'approximation
-      // "mordait" légèrement sur le tracé réel (routes qui semblaient trouées).
-      var clipped = hasPreciseBoundary ? clipLineToCommune(latlngs) : [latlngs];
+      // Avec le vrai contour précis : découpage strict aux limites de la
+      // commune. Avec le contour de secours (approximatif) : découpage avec
+      // une marge de tolérance, pour éviter de couper à tort de vraies
+      // routes tout en excluant les communes clairement voisines.
+      var clipped = hasPreciseBoundary ? clipLineToCommune(latlngs) : clipLineToCommuneWithMargin(latlngs);
       if(clipped.length === 0) return; // route entièrement hors commune : on ne l'affiche pas
       var tags = el.tags || {};
       var roadClass = classifyRoad(tags);
