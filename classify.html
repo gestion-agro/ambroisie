@@ -162,6 +162,32 @@
   // Relais via le Worker Cloudflare plutôt qu'un appel direct au navigateur :
   // certains réseaux/limitations anti-abus d'Overpass bloquent les requêtes
   // directes, alors que l'infrastructure Cloudflare y accède normalement.
+  function fetchFromBdTopo(bbox, onSuccess, onFail, timeoutMs){
+    timeoutMs = timeoutMs || 15000;
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/bdtopo-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bbox: bbox }),
+      signal: controller.signal
+    })
+    .then(function(r){
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){
+      if(data && data.error) throw new Error(data.error);
+      onSuccess(data);
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Relais BD TOPO (IGN) en échec:', err);
+      onFail();
+    });
+  }
+
   function fetchFromOverpass(query, onSuccess, onFail, timeoutMs){
     timeoutMs = timeoutMs || 38000;
     var controller = new AbortController();
@@ -244,10 +270,15 @@
   }
 
   function loadRoadsFromOsm(){
-    // La requête bbox est bien plus légère/rapide pour Overpass que la
-    // recherche par zone administrative (area["ref:INSEE"]) — on l'essaie
-    // donc en premier, la seconde ne servant plus que de repli.
-    loadRoadsBbox();
+    // La BD TOPO de l'IGN est essayée en premier (source officielle,
+    // infrastructure indépendante d'Overpass). Overpass ne sert plus que de
+    // repli si l'IGN est aussi indisponible.
+    fetchFromBdTopo(BBOX, function(data){
+      buildRoadsIndex(data);
+      afterRoadsLoaded();
+    }, function(){
+      loadRoadsBbox();
+    }, 15000);
   }
   function loadRoadsInsee(){
     var queryInsee =
