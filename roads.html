@@ -211,20 +211,6 @@
     });
   }
 
-  // Exclut de roadsIndex les routes qui n'ont AUCUN point dans ou à proximité
-  // de la commune (routes entièrement situées sur une commune voisine).
-  function filterRoadsToCommuneArea(){
-    if(!communeRings) return;
-    Object.keys(roadsIndex).forEach(function(key){
-      var entry = roadsIndex[key];
-      var lines = entry.latlngsList || [];
-      var hasPointInside = lines.some(function(line){
-        return line.some(function(p){ return isNearCommune(p[0], p[1]); });
-      });
-      if(!hasPointInside) delete roadsIndex[key];
-    });
-  }
-
   function escapeHtml(str){
     var div = document.createElement('div');
     div.textContent = str == null ? '' : String(str);
@@ -319,9 +305,15 @@
   }
 
   function buildRoadsIndex(osmData){
+    // Chaque tronçon est vérifié individuellement contre le contour communal
+    // AVANT d'être regroupé par nom — indispensable : sinon une route portant
+    // le même nom sur une commune voisine restait mélangée avec la vraie
+    // route de Belsentes sous la même entrée.
     var grouped = {};
     (osmData.elements || []).forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
+      var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
+      if(communeRings && !latlngs.some(function(p){ return isNearCommune(p[0], p[1]); })) return;
       var tags = el.tags || {};
       var key = roadKeyFor(tags, el.id);
       if(!grouped[key]){
@@ -331,7 +323,7 @@
           rawLines: []
         };
       }
-      grouped[key].rawLines.push(el.geometry.map(function(pt){ return [pt.lat, pt.lon]; }));
+      grouped[key].rawLines.push(latlngs);
     });
     roadsIndex = {};
     Object.keys(grouped).forEach(function(key){
@@ -358,13 +350,14 @@
     });
   }
 
+  var lastOsmData = null;
   function loadRoadsFromOsm(){
     document.getElementById('loadStatus').style.display = 'block';
     document.getElementById('loadStatus').textContent = 'Chargement des routes (BD TOPO)…';
     document.getElementById('mainTable').style.display = 'none';
 
     fetchFromBdTopo(BBOX, function(data){
-      buildRoadsIndex(data);
+      lastOsmData = data;
       afterRoadsLoaded();
     }, function(){
       document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter la BD TOPO (IGN). Réessayez dans quelques minutes.';
@@ -389,9 +382,9 @@
 
   async function afterRoadsLoaded(){
     await loadRoadCoverage();
+    await boundaryFetchPromise; // le contour doit être prêt AVANT de regrouper les tronçons par nom
+    buildRoadsIndex(lastOsmData);
     mergeManualRoads();
-    await boundaryFetchPromise; // s'assure que le contour est prêt avant de filtrer
-    filterRoadsToCommuneArea();
     applyRoadClassOverrides();
     document.getElementById('loadStatus').style.display = 'none';
     document.getElementById('mainTable').style.display = 'table';
