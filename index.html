@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-g</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-h</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1890,6 +1890,24 @@
     return rings;
   }
 
+  // Convertit l'ancien format de customGeometry (un seul tracé plat : liste
+  // de [lat,lon]) vers le nouveau (une LISTE de tracés, pour gérer plusieurs
+  // morceaux disjoints) — nécessaire pour ne pas casser les tracés modifiés
+  // avant l'ajout du support multi-morceaux. Retourne null si invalide.
+  function normalizeCustomGeometry(customGeom){
+    if(!customGeom || !Array.isArray(customGeom) || customGeom.length === 0) return null;
+    var first = customGeom[0];
+    if(Array.isArray(first) && typeof first[0] === 'number'){
+      // Ancien format : customGeom est directement une liste de points.
+      return [customGeom];
+    }
+    if(Array.isArray(first) && Array.isArray(first[0])){
+      // Nouveau format : déjà une liste de tracés.
+      return customGeom;
+    }
+    return null; // format inattendu, on ignore plutôt que de planter
+  }
+
   function drawRoads(osmData){
     if(!osmData.elements || osmData.elements.length === 0){
       showLoadError('Aucune route trouvée pour Belsentes pour le moment.');
@@ -1924,7 +1942,7 @@
     // fausses coupures aux jonctions entre tronçons.
     Object.keys(grouped).forEach(function(key){
       var g = grouped[key];
-      var customGeom = roadCoverage[key] && roadCoverage[key].customGeometry;
+      var customGeom = normalizeCustomGeometry(roadCoverage[key] && roadCoverage[key].customGeometry);
       var finalSegments;
       if(customGeom && customGeom.length){
         // Un tracé a été ajusté manuellement (📏 Modifier le tracé) : on
@@ -1946,12 +1964,24 @@
       roadsIndex[key] = { key: key, label: g.label, roadClass: g.roadClass, originalClass: g.roadClass, polylines: [], baseStyle: g.style, latlngsList: [] };
       var targetLayer = g.roadClass === 'RD' ? roadsLayerRD : (g.roadClass === 'RN' ? roadsLayerRN : (g.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
       finalSegments.forEach(function(seg){
-        var line = L.polyline(seg, g.style);
-        line.addTo(targetLayer);
-        line.on('click', function(){ openRoadQuickView(key); });
-        roadsIndex[key].polylines.push(line);
-        roadsIndex[key].latlngsList.push(seg);
-        seg.forEach(function(p){ bounds.push(p); });
+        // Une route avec des coordonnées invalides ne doit JAMAIS empêcher
+        // l'affichage des routes suivantes — sans ce filet de sécurité, une
+        // seule route cassée interrompait toute la boucle et faisait
+        // disparaître la moitié de la commune (bug vécu et corrigé).
+        try{
+          if(!Array.isArray(seg) || seg.length < 2 || seg.some(function(p){ return !Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number'; })){
+            console.warn('Route "' + g.label + '" : tronçon avec des coordonnées invalides, ignoré.', seg);
+            return;
+          }
+          var line = L.polyline(seg, g.style);
+          line.addTo(targetLayer);
+          line.on('click', function(){ openRoadQuickView(key); });
+          roadsIndex[key].polylines.push(line);
+          roadsIndex[key].latlngsList.push(seg);
+          seg.forEach(function(p){ bounds.push(p); });
+        } catch(err){
+          console.warn('Erreur lors de l\'affichage d\'un tronçon de "' + g.label + '", ignoré :', err);
+        }
       });
     });
 
@@ -1980,13 +2010,22 @@
       if(cov.source !== 'manual' || !cov.latlngsList || roadsIndex[key]) return;
       var roadClass = cov.customClass || 'RC';
       var style = roadStyle(null, roadClass);
-      var entry = { key: key, label: cov.customName || key, roadClass: roadClass, originalClass: roadClass, polylines: [], baseStyle: style, latlngsList: cov.latlngsList };
+      var entry = { key: key, label: cov.customName || key, roadClass: roadClass, originalClass: roadClass, polylines: [], baseStyle: style, latlngsList: [] };
       cov.latlngsList.forEach(function(latlngs){
-        var line = L.polyline(latlngs, style);
-        var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
-        line.addTo(targetLayer);
-        line.on('click', function(){ openRoadQuickView(key); });
-        entry.polylines.push(line);
+        try{
+          if(!Array.isArray(latlngs) || latlngs.length < 2 || latlngs.some(function(p){ return !Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number'; })){
+            console.warn('Route manuelle "' + key + '" : tronçon invalide, ignoré.', latlngs);
+            return;
+          }
+          var line = L.polyline(latlngs, style);
+          var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+          line.addTo(targetLayer);
+          line.on('click', function(){ openRoadQuickView(key); });
+          entry.polylines.push(line);
+          entry.latlngsList.push(latlngs);
+        } catch(err){
+          console.warn('Erreur affichage route manuelle "' + key + '", ignoré :', err);
+        }
       });
       roadsIndex[key] = entry;
     });
@@ -2002,7 +2041,7 @@
   function applyCustomGeometryOverrides(){
     Object.keys(roadCoverage).forEach(function(key){
       var cov = roadCoverage[key];
-      var customGeom = cov.customGeometry; // liste de morceaux
+      var customGeom = normalizeCustomGeometry(cov.customGeometry); // liste de morceaux
       var entry = roadsIndex[key];
       if(!customGeom || !customGeom.length || !entry) return;
       if(JSON.stringify(entry.latlngsList) === JSON.stringify(customGeom)) return; // déjà appliqué
@@ -2010,13 +2049,23 @@
         [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); });
       });
       var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
-      entry.polylines = customGeom.map(function(seg){
-        var newLine = L.polyline(seg, entry.baseStyle);
-        newLine.addTo(targetLayer);
-        newLine.on('click', function(){ openRoadQuickView(key); });
-        return newLine;
+      entry.polylines = [];
+      entry.latlngsList = [];
+      customGeom.forEach(function(seg){
+        try{
+          if(!Array.isArray(seg) || seg.length < 2 || seg.some(function(p){ return !Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number'; })){
+            console.warn('Tracé personnalisé invalide pour "' + key + '", tronçon ignoré.', seg);
+            return;
+          }
+          var newLine = L.polyline(seg, entry.baseStyle);
+          newLine.addTo(targetLayer);
+          newLine.on('click', function(){ openRoadQuickView(key); });
+          entry.polylines.push(newLine);
+          entry.latlngsList.push(seg);
+        } catch(err){
+          console.warn('Erreur affichage tracé personnalisé pour "' + key + '", ignoré :', err);
+        }
       });
-      entry.latlngsList = customGeom.map(function(seg){ return seg.slice(); });
     });
     applyRoadCoverageStyling();
   }
