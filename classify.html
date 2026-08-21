@@ -145,6 +145,80 @@
     return h;
   }
 
+  // ---- Contour précis de la commune (pour exclure les communes voisines) ----
+  // Sans ce filtrage, des routes de communes voisines (dont le tracé rentre
+  // dans la boîte englobante utilisée pour la requête) apparaissaient dans la
+  // liste à classifier.
+  var communeRings = null;
+  var boundaryFetchPromise = null;
+
+  function fetchCommuneBoundary(){
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, 9000);
+    return fetch(CONFIG.WORKER_URL.replace('/signalements', '/commune-boundary-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ insee: INSEE_CODE }),
+      signal: controller.signal
+    })
+    .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){
+      clearTimeout(to);
+      if(data.error || !data.geometry) throw new Error(data.error || 'Pas de géométrie');
+      var geometry = data.geometry;
+      var rings = [];
+      if(geometry.type === 'Polygon'){
+        if(geometry.coordinates[0]) rings.push(geometry.coordinates[0].map(function(c){ return [c[1], c[0]]; }));
+      } else if(geometry.type === 'MultiPolygon'){
+        geometry.coordinates.forEach(function(poly){
+          if(poly[0]) rings.push(poly[0].map(function(c){ return [c[1], c[0]]; }));
+        });
+      }
+      if(rings.length) communeRings = rings;
+    })
+    .catch(function(err){
+      clearTimeout(to);
+      console.warn('Contour communal indisponible, pas de filtrage possible :', err);
+    });
+  }
+
+  function pointInRing(lat, lon, ring){
+    var inside = false;
+    for(var i = 0, j = ring.length - 1; i < ring.length; j = i++){
+      var yi = ring[i][0], xi = ring[i][1], yj = ring[j][0], xj = ring[j][1];
+      var intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Marge de tolérance (~300m) : une route est gardée si au moins un de ses
+  // points tombe dans la commune OU à proximité immédiate — pour ne pas
+  // exclure à tort une route qui longe la limite communale.
+  var MARGIN_DEG = 0.0027;
+  function isNearCommune(lat, lon){
+    if(!communeRings) return true; // contour indisponible : on ne filtre rien plutôt que de tout exclure à tort
+    if(communeRings.some(function(ring){ return pointInRing(lat, lon, ring); })) return true;
+    var offsets = [[MARGIN_DEG,0],[-MARGIN_DEG,0],[0,MARGIN_DEG],[0,-MARGIN_DEG]];
+    return offsets.some(function(o){
+      return communeRings.some(function(ring){ return pointInRing(lat + o[0], lon + o[1], ring); });
+    });
+  }
+
+  // Exclut de roadsIndex les routes qui n'ont AUCUN point dans ou à proximité
+  // de la commune (routes entièrement situées sur une commune voisine).
+  function filterRoadsToCommuneArea(){
+    if(!communeRings) return;
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      var lines = entry.latlngsList || [];
+      var hasPointInside = lines.some(function(line){
+        return line.some(function(p){ return isNearCommune(p[0], p[1]); });
+      });
+      if(!hasPointInside) delete roadsIndex[key];
+    });
+  }
+
   // ---- Carte : fond OSM classique + superposition du cadastre officiel ----
   // Source IGN/Géoportail (gratuite, sans clé nécessaire) : parcelles issues
   // du Plan Cadastral Informatisé, à jour tous les 3 mois.
@@ -395,6 +469,7 @@
   }
 
   async function boot(){
+    boundaryFetchPromise = fetchCommuneBoundary(); // lancé en parallèle, attendu plus tard (voir afterRoadsLoaded)
     loadRoadsFromOsm();
   }
 
@@ -402,6 +477,8 @@
     await loadRoadCoverage();
     mergeManualRoads();
     applyCustomGeometryOverrides();
+    await boundaryFetchPromise; // s'assure que le contour est prêt avant de filtrer
+    filterRoadsToCommuneArea();
     document.getElementById('loadStatus').classList.add('hidden');
     buildQueue();
     showCurrent();
