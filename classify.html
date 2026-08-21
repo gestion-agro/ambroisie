@@ -205,20 +205,6 @@
     });
   }
 
-  // Exclut de roadsIndex les routes qui n'ont AUCUN point dans ou à proximité
-  // de la commune (routes entièrement situées sur une commune voisine).
-  function filterRoadsToCommuneArea(){
-    if(!communeRings) return;
-    Object.keys(roadsIndex).forEach(function(key){
-      var entry = roadsIndex[key];
-      var lines = entry.latlngsList || [];
-      var hasPointInside = lines.some(function(line){
-        return line.some(function(p){ return isNearCommune(p[0], p[1]); });
-      });
-      if(!hasPointInside) delete roadsIndex[key];
-    });
-  }
-
   // ---- Carte : fond OSM classique + superposition du cadastre officiel ----
   // Source IGN/Géoportail (gratuite, sans clé nécessaire) : parcelles issues
   // du Plan Cadastral Informatisé, à jour tous les 3 mois.
@@ -340,9 +326,17 @@
   }
 
   function buildRoadsIndex(osmData){
+    // Chaque tronçon est d'abord vérifié individuellement contre le contour
+    // communal (avec marge) AVANT d'être regroupé par nom — indispensable :
+    // si on filtrait APRÈS le regroupement, une route portant le même nom
+    // sur une commune voisine (assez courant : "Chemin du Moulin"...) restait
+    // mélangée avec la vraie route de Belsentes sous la même entrée, faisant
+    // "traîner" un tronçon étranger avec elle.
     var grouped = {};
     (osmData.elements || []).forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
+      var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
+      if(communeRings && !latlngs.some(function(p){ return isNearCommune(p[0], p[1]); })) return;
       var tags = el.tags || {};
       var key = roadKeyFor(tags, el.id);
       if(!grouped[key]){
@@ -352,7 +346,7 @@
           rawLines: []
         };
       }
-      grouped[key].rawLines.push(el.geometry.map(function(pt){ return [pt.lat, pt.lon]; }));
+      grouped[key].rawLines.push(latlngs);
     });
     roadsIndex = {};
     Object.keys(grouped).forEach(function(key){
@@ -367,9 +361,10 @@
     // tracées manuellement l'est encore, gérée dans saveRoadCoverage.
   }
 
+  var lastOsmData = null;
   function loadRoadsFromOsm(){
     fetchFromBdTopo(BBOX, function(data){
-      buildRoadsIndex(data);
+      lastOsmData = data;
       afterRoadsLoaded();
     }, function(){
       document.getElementById('loadStatus').textContent = '⚠️ Impossible de contacter la BD TOPO (IGN). Réessayez dans quelques minutes.';
@@ -463,22 +458,22 @@
     Object.keys(roadCoverage).forEach(function(key){
       var cov = roadCoverage[key];
       var entry = roadsIndex[key];
-      if(!cov.customGeometry || cov.customGeometry.length < 2 || !entry) return;
-      entry.latlngsList = [cov.customGeometry];
+      if(!cov.customGeometry || !cov.customGeometry.length || !entry) return;
+      entry.latlngsList = cov.customGeometry.map(function(seg){ return seg.slice(); });
     });
   }
 
   async function boot(){
-    boundaryFetchPromise = fetchCommuneBoundary(); // lancé en parallèle, attendu plus tard (voir afterRoadsLoaded)
+    boundaryFetchPromise = fetchCommuneBoundary();
     loadRoadsFromOsm();
   }
 
   async function afterRoadsLoaded(){
     await loadRoadCoverage();
+    await boundaryFetchPromise; // le contour doit être prêt AVANT de regrouper les tronçons par nom
+    buildRoadsIndex(lastOsmData);
     mergeManualRoads();
     applyCustomGeometryOverrides();
-    await boundaryFetchPromise; // s'assure que le contour est prêt avant de filtrer
-    filterRoadsToCommuneArea();
     document.getElementById('loadStatus').classList.add('hidden');
     buildQueue();
     showCurrent();
