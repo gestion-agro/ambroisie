@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-e</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-f</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -822,10 +822,17 @@
   var roadsLayerRD = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var roadsLayerRN = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var roadsLayerPath = L.layerGroup(); // chemins de terre/privés, indicatif seulement, désactivé par défaut
+  // Boîte englobante utilisée pour interroger les routes (BD TOPO) autour de
+  // la commune, et pour borner la couche cadastre.
+  var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
   // Cadastre officiel IGN/Géoportail (parcelles), gratuit et sans clé,
   // superposé à la carte — désactivé par défaut (assez lourd visuellement).
+  // Limité à la zone de la commune (avec une petite marge) plutôt qu'à toute
+  // la carte : évite de charger inutilement des tuiles sur les communes
+  // voisines quand on se déplace/dézoome.
   var cadastreLayer = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {
-    maxNativeZoom: 19, maxZoom: 22, opacity: 0.75, attribution: 'Cadastre © IGN/Géoportail'
+    maxNativeZoom: 19, maxZoom: 22, opacity: 0.75, attribution: 'Cadastre © IGN/Géoportail',
+    bounds: L.latLngBounds([BBOX.south - 0.01, BBOX.west - 0.01], [BBOX.north + 0.01, BBOX.east + 0.01])
   });
   var trackLayer = L.layerGroup().addTo(map);
   var otherTracksLayer = L.layerGroup().addTo(map);
@@ -891,9 +898,6 @@
   // Code INSEE de Belsentes — utilisé pour récupérer le contour administratif
   // précis de la commune (API officielle geo.api.gouv.fr).
   var INSEE_CODE = "07165";
-  // Boîte englobante utilisée pour interroger les routes (BD TOPO) autour de
-  // la commune.
-  var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
 
 
   // ================= SUIVI DE COUVERTURE DES ROUTES =================
