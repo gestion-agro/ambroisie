@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-f</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-g</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -741,12 +741,13 @@
 
 <div id="drawRoadBanner" class="hidden" style="position:fixed;left:10px;right:10px;bottom:90px;z-index:1400;background:var(--panel);border:3px solid #e6007e;border-radius:12px;padding:12px 14px;box-shadow:2px 3px 0 rgba(0,0,0,.2);">
   <p id="drawRoadTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;">✏️ Touchez la carte pour tracer la route</p>
-  <p style="margin:0 0 8px;font-size:12px;color:var(--muted);"><span id="drawRoadCount">0</span> point(s)</p>
-  <div style="display:flex;gap:8px;">
+  <p style="margin:0 0 8px;font-size:12px;color:var(--muted);"><span id="drawRoadCount">0 point(s)</span></p>
+  <div style="display:flex;gap:8px;margin-bottom:8px;">
     <button class="btn" id="btnCancelDrawRoad" style="flex:1;">Annuler</button>
     <button class="btn" id="btnRemoveLastPoint" style="flex:1;">↩️ Dernier point</button>
     <button class="btn primary" id="btnFinishDrawRoad" style="flex:1;" disabled>Terminer</button>
   </div>
+  <button class="btn" id="btnNewSegment" style="width:100%;">➕ Nouveau morceau (route interrompue)</button>
 </div>
 
 <div id="controls">
@@ -1127,143 +1128,183 @@
 
   // ================= AJOUT MANUEL D'UNE ROUTE (admin) =================
   // Pour une route existante sur le terrain mais absente d'OpenStreetMap.
+  // Système de tracé unifié (création d'une nouvelle route OU modification
+  // d'une route existante) — gère PLUSIEURS morceaux à la fois (une route
+  // peut légitimement être en plusieurs tronçons disjoints, par exemple
+  // interrompue par un obstacle). editSegments est une liste de tracés,
+  // chacun une liste de points [lat,lon].
   var drawingRoad = false;
-  var drawingPoints = [];
-  var drawingMarkers = L.layerGroup();
-  var drawingLine = null;
-  var editingRoadKey = null; // si non-null : on modifie le tracé d'une route existante plutôt que d'en créer une nouvelle
+  var editSegments = [];
+  var activeSegmentIndex = 0;
+  var editMarkers = L.layerGroup();
+  var editLines = [];
+  var editingRoadKey = null; // si non-null : on modifie une route existante plutôt que d'en créer une nouvelle
 
   function startDrawRoad(){
     if(currentRole !== 'admin') return;
     editingRoadKey = null;
     drawingRoad = true;
-    drawingPoints = [];
-    drawingMarkers.addTo(map);
-    if(drawingLine){ map.removeLayer(drawingLine); drawingLine = null; }
+    editSegments = [[]];
+    activeSegmentIndex = 0;
+    resetEditLayers();
     document.getElementById('drawRoadBanner').classList.remove('hidden');
     document.getElementById('drawRoadTitle').textContent = '✏️ Touchez la carte pour tracer la route';
     document.getElementById('btnFinishDrawRoad').textContent = 'Terminer';
     updateDrawRoadUI();
   }
 
-  // Modifier le tracé d'une route existante (agrandir, raccourcir, ou
-  // ajuster un point) — repart des points actuels de la route, modifiables
-  // exactement comme lors d'un tracé neuf (glisser un point, en ajouter en
-  // touchant la carte, ou supprimer le dernier).
+  // Modifier le tracé d'une route existante (agrandir, raccourcir, ajuster un
+  // point, ou compléter un morceau manquant) — repart de TOUS les morceaux
+  // actuels de la route, chacun modifiable indépendamment.
   function startEditRoadTrace(key, entry){
     if(currentRole !== 'admin') return;
-    var line = (roadCoverage[key] && roadCoverage[key].customGeometry) ||
-      (entry.latlngsList && entry.latlngsList[0]) || [];
-    if(!line.length){ customAlert('Impossible de modifier cette route (tracé introuvable).'); return; }
+    var cov = roadCoverage[key];
+    var segments = (cov && cov.customGeometry && cov.customGeometry.length) ? cov.customGeometry : entry.latlngsList;
+    if(!segments || !segments.length){ customAlert('Impossible de modifier cette route (tracé introuvable).'); return; }
     editingRoadKey = key;
     drawingRoad = true;
-    drawingPoints = line.map(function(p){ return [p[0], p[1]]; });
-    drawingMarkers.clearLayers();
-    drawingMarkers.addTo(map);
-    if(drawingLine){ map.removeLayer(drawingLine); drawingLine = null; }
-    drawingPoints.forEach(addDraggableMarker);
-    redrawDrawingLine();
+    editSegments = segments.map(function(line){ return line.map(function(p){ return [p[0], p[1]]; }); });
+    activeSegmentIndex = editSegments.length - 1;
+    resetEditLayers();
+    editSegments.forEach(function(seg, segIdx){
+      seg.forEach(function(p, ptIdx){ addDraggableMarker(p, segIdx, ptIdx); });
+    });
+    redrawEditLines();
     document.getElementById('drawRoadBanner').classList.remove('hidden');
-    document.getElementById('drawRoadTitle').textContent = '✏️ Glissez un point pour l\'ajuster, touchez la carte pour prolonger';
+    document.getElementById('drawRoadTitle').textContent = editSegments.length > 1
+      ? '✏️ Route en ' + editSegments.length + ' morceaux — glissez un point, touchez la carte pour prolonger le dernier morceau touché'
+      : '✏️ Glissez un point pour l\'ajuster, touchez la carte pour prolonger';
     document.getElementById('btnFinishDrawRoad').textContent = 'Enregistrer les modifications';
     updateDrawRoadUI();
   }
 
-  function redrawDrawingLine(){
-    if(drawingLine) map.removeLayer(drawingLine);
-    if(drawingPoints.length > 1){
-      drawingLine = L.polyline(drawingPoints, { color:'#e6007e', weight:5, dashArray:'6 6' }).addTo(map);
-    }
+  function resetEditLayers(){
+    editMarkers.clearLayers();
+    editMarkers.addTo(map);
+    editLines.forEach(function(l){ map.removeLayer(l); });
+    editLines = [];
   }
 
-  var draggingMarkerIndex = -1;
+  function redrawEditLines(){
+    editLines.forEach(function(l){ map.removeLayer(l); });
+    editLines = editSegments.map(function(seg, idx){
+      if(seg.length < 2) return null;
+      return L.polyline(seg, { color:'#e6007e', weight:5, dashArray: idx === activeSegmentIndex ? '6 6' : null, opacity: idx === activeSegmentIndex ? 1 : 0.6 }).addTo(map);
+    });
+  }
 
-  function addDraggableMarker(latlng, index){
+  var draggingMarker = null;
+
+  function addDraggableMarker(latlng, segIdx, ptIdx){
     var marker = L.circleMarker(latlng, { radius:6, color:'#e6007e', fillColor:'#fff', fillOpacity:1, weight:3 });
+    marker._segIdx = segIdx;
+    marker._ptIdx = ptIdx;
     // Leaflet ne permet pas de rendre un circleMarker "draggable" nativement
     // sans le plugin Leaflet.Editable — on simule le glisser au doigt/souris
     // manuellement (écouteurs partagés au niveau de la carte, voir plus bas),
     // ce qui reste fiable sur mobile comme sur ordinateur.
     marker.on('mousedown touchstart', function(e){
-      draggingMarkerIndex = drawingMarkers.getLayers().indexOf(marker);
+      draggingMarker = marker;
+      activeSegmentIndex = marker._segIdx;
       map.dragging.disable();
       L.DomEvent.stopPropagation(e);
     });
-    marker.addTo(drawingMarkers);
+    marker.addTo(editMarkers);
   }
 
   map.on('mousemove touchmove', function(e){
-    if(draggingMarkerIndex === -1) return;
-    var layers = drawingMarkers.getLayers();
-    var marker = layers[draggingMarkerIndex];
-    if(!marker) return;
-    marker.setLatLng(e.latlng);
-    drawingPoints[draggingMarkerIndex] = [e.latlng.lat, e.latlng.lng];
-    redrawDrawingLine();
+    if(!draggingMarker) return;
+    draggingMarker.setLatLng(e.latlng);
+    editSegments[draggingMarker._segIdx][draggingMarker._ptIdx] = [e.latlng.lat, e.latlng.lng];
+    redrawEditLines();
   });
   map.on('mouseup touchend', function(){
-    if(draggingMarkerIndex === -1) return;
-    draggingMarkerIndex = -1;
+    if(!draggingMarker) return;
+    draggingMarker = null;
     map.dragging.enable();
   });
 
   function cancelDrawRoad(){
     drawingRoad = false;
     editingRoadKey = null;
-    drawingPoints = [];
-    drawingMarkers.clearLayers();
-    map.removeLayer(drawingMarkers);
-    if(drawingLine){ map.removeLayer(drawingLine); drawingLine = null; }
+    editSegments = [];
+    editMarkers.clearLayers();
+    map.removeLayer(editMarkers);
+    editLines.forEach(function(l){ map.removeLayer(l); });
+    editLines = [];
     document.getElementById('drawRoadBanner').classList.add('hidden');
   }
 
+  function totalEditPoints(){
+    return editSegments.reduce(function(sum, s){ return sum + s.length; }, 0);
+  }
+
   function updateDrawRoadUI(){
-    document.getElementById('drawRoadCount').textContent = drawingPoints.length;
-    document.getElementById('btnFinishDrawRoad').disabled = drawingPoints.length < 2;
+    var segCount = editSegments.length;
+    document.getElementById('drawRoadCount').textContent = totalEditPoints() + (segCount > 1 ? ' points, ' + segCount + ' morceaux' : ' point(s)');
+    var activeLen = editSegments[activeSegmentIndex] ? editSegments[activeSegmentIndex].length : 0;
+    var hasAnyValidSegment = editSegments.some(function(s){ return s.length >= 2; });
+    document.getElementById('btnFinishDrawRoad').disabled = !hasAnyValidSegment;
   }
 
   function removeLastDrawingPoint(){
-    if(drawingPoints.length === 0) return;
-    drawingPoints.pop();
-    var layers = drawingMarkers.getLayers();
-    if(layers.length) drawingMarkers.removeLayer(layers[layers.length - 1]);
-    redrawDrawingLine();
+    var seg = editSegments[activeSegmentIndex];
+    if(!seg || seg.length === 0) return;
+    seg.pop();
+    var layers = editMarkers.getLayers().filter(function(m){ return m._segIdx === activeSegmentIndex; });
+    if(layers.length) editMarkers.removeLayer(layers[layers.length - 1]);
+    redrawEditLines();
+    updateDrawRoadUI();
+  }
+
+  // Démarre un nouveau morceau disjoint (utile pour une route qui a
+  // légitimement plusieurs tronçons séparés, ou pour compléter un morceau
+  // manquant sans le relier au précédent).
+  function startNewSegment(){
+    editSegments.push([]);
+    activeSegmentIndex = editSegments.length - 1;
+    redrawEditLines();
     updateDrawRoadUI();
   }
 
   map.on('click', function(e){
     if(!drawingRoad) return;
-    drawingPoints.push([e.latlng.lat, e.latlng.lng]);
-    addDraggableMarker(e.latlng);
-    redrawDrawingLine();
+    var seg = editSegments[activeSegmentIndex];
+    var ptIdx = seg.length;
+    seg.push([e.latlng.lat, e.latlng.lng]);
+    addDraggableMarker(e.latlng, activeSegmentIndex, ptIdx);
+    redrawEditLines();
     updateDrawRoadUI();
   });
 
   async function finishDrawRoad(){
-    if(drawingPoints.length < 2) return;
+    var validSegments = editSegments.filter(function(s){ return s.length >= 2; });
+    if(validSegments.length === 0) return;
 
     if(editingRoadKey){
       // Modification d'une route existante : on enregistre juste le nouveau
-      // tracé, sans redemander nom/classification (déjà définis).
+      // tracé (tous les morceaux), sans redemander nom/classification.
       var key = editingRoadKey;
       var e = roadCoverage[key] || { covered: false };
-      e.customGeometry = drawingPoints.slice();
+      e.customGeometry = validSegments.map(function(s){ return s.slice(); });
       roadCoverage[key] = e;
       var entry = roadsIndex[key];
       if(entry){
         entry.polylines.forEach(function(line){ [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); }); });
-        entry.latlngsList = [drawingPoints.slice()];
-        var newLine = L.polyline(drawingPoints, entry.baseStyle);
+        entry.latlngsList = e.customGeometry.map(function(s){ return s.slice(); });
         var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
-        newLine.addTo(targetLayer);
-        newLine.on('click', function(){ openRoadQuickView(key); });
-        entry.polylines = [newLine];
+        entry.polylines = entry.latlngsList.map(function(seg){
+          var newLine = L.polyline(seg, entry.baseStyle);
+          newLine.addTo(targetLayer);
+          newLine.on('click', function(){ openRoadQuickView(key); });
+          return newLine;
+        });
         applyRoadCoverageStyling();
       }
       cancelDrawRoad();
       try{
         await saveRoadCoverage();
-        await customAlert('Tracé mis à jour.');
+        await customAlert('Tracé mis à jour (' + validSegments.length + ' morceau(x)).');
       } catch(err){
         await customAlert('Erreur lors de l\'enregistrement. Réessayez.');
       }
@@ -1290,7 +1331,7 @@
     var newKey = 'manual-' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
     roadCoverage[newKey] = {
       covered: false, customName: name, customClass: choice, hidden: false, reviewed: true,
-      latlngsList: [drawingPoints.slice()], label: name, source: 'manual'
+      latlngsList: validSegments.map(function(s){ return s.slice(); }), label: name, source: 'manual'
     };
     cancelDrawRoad();
     drawStoredManualRoads();
@@ -1885,11 +1926,13 @@
       var g = grouped[key];
       var customGeom = roadCoverage[key] && roadCoverage[key].customGeometry;
       var finalSegments;
-      if(customGeom && customGeom.length > 1){
+      if(customGeom && customGeom.length){
         // Un tracé a été ajusté manuellement (📏 Modifier le tracé) : on
         // l'utilise tel quel, à la place de la géométrie BD TOPO — pas de
         // recollage ni découpage à y appliquer, c'est déjà le tracé voulu.
-        finalSegments = [customGeom];
+        // customGeom est une LISTE de morceaux (une route peut avoir
+        // plusieurs tronçons disjoints ajustés indépendamment).
+        finalSegments = customGeom;
       } else {
         var stitched = stitchSegmentsLoose(g.rawLines);
         finalSegments = [];
@@ -1959,19 +2002,21 @@
   function applyCustomGeometryOverrides(){
     Object.keys(roadCoverage).forEach(function(key){
       var cov = roadCoverage[key];
-      var customGeom = cov.customGeometry;
+      var customGeom = cov.customGeometry; // liste de morceaux
       var entry = roadsIndex[key];
-      if(!customGeom || customGeom.length < 2 || !entry) return;
-      if(entry.latlngsList.length === 1 && JSON.stringify(entry.latlngsList[0]) === JSON.stringify(customGeom)) return; // déjà appliqué
+      if(!customGeom || !customGeom.length || !entry) return;
+      if(JSON.stringify(entry.latlngsList) === JSON.stringify(customGeom)) return; // déjà appliqué
       entry.polylines.forEach(function(line){
         [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); });
       });
-      var newLine = L.polyline(customGeom, entry.baseStyle);
       var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
-      newLine.addTo(targetLayer);
-      newLine.on('click', function(){ openRoadQuickView(key); });
-      entry.polylines = [newLine];
-      entry.latlngsList = [customGeom];
+      entry.polylines = customGeom.map(function(seg){
+        var newLine = L.polyline(seg, entry.baseStyle);
+        newLine.addTo(targetLayer);
+        newLine.on('click', function(){ openRoadQuickView(key); });
+        return newLine;
+      });
+      entry.latlngsList = customGeom.map(function(seg){ return seg.slice(); });
     });
     applyRoadCoverageStyling();
   }
@@ -2856,6 +2901,7 @@
   document.getElementById('btnCancelDrawRoad').addEventListener('click', cancelDrawRoad);
   document.getElementById('btnFinishDrawRoad').addEventListener('click', finishDrawRoad);
   document.getElementById('btnRemoveLastPoint').addEventListener('click', removeLastDrawingPoint);
+  document.getElementById('btnNewSegment').addEventListener('click', startNewSegment);
 
   document.getElementById('btnBackfillRefNumbers').addEventListener('click', async function(){
     var missing = signalements.filter(function(s){ return !s.refNumber; });
