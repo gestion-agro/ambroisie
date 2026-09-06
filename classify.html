@@ -66,6 +66,7 @@
     justify-content:center;text-align:center;padding:30px;font-size:14px;color:var(--muted);
   }
   .loadingMsg.hidden{display:none;}
+  #banSuggestion.hidden{display:none;}
 </style>
 </head>
 <body>
@@ -101,6 +102,10 @@
 <div id="banner">
   <h2 id="roadName">—</h2>
   <div class="sub" id="roadSub">—</div>
+  <div id="banSuggestion" class="hidden" style="background:#eaf3ff;border:2px solid #2f6bd6;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px;">
+    💡 Nom suggéré par les adresses officielles (BAN) : <strong id="banSuggestionText"></strong>
+    <button id="btnUseBanName" style="margin-left:8px;background:#2f6bd6;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">Utiliser ce nom</button>
+  </div>
   <div id="classButtons">
     <button data-class="RC">Communale (RC)</button>
     <button data-class="RD">Départementale (RD)</button>
@@ -506,6 +511,7 @@
     document.getElementById('progress').textContent = (queueIndex + 1) + ' / ' + queue.length;
     document.getElementById('roadName').textContent = roadDisplayLabel(entry);
     document.getElementById('roadSub').textContent = 'Classification actuelle : ' + roadClassLabel(entry.roadClass);
+    document.getElementById('banSuggestion').classList.add('hidden');
 
     document.querySelectorAll('#classButtons button').forEach(function(btn){
       btn.classList.toggle('current', btn.getAttribute('data-class') === entry.roadClass);
@@ -521,6 +527,52 @@
     if(bounds.length){
       map.fitBounds(L.latLngBounds(bounds), { padding:[60, 220], maxZoom:18 });
     }
+
+    checkBanNameSuggestion(entry);
+  }
+
+  // Vérifie le nom de la route auprès de la BAN (adresses les plus proches
+  // du milieu du tracé) — utile pour repérer/corriger un nom douteux ou
+  // absent dans la BD TOPO. Purement indicatif : n'affiche une suggestion
+  // que si elle diffère du nom actuel, et ne fait rien automatiquement.
+  var banRequestToken = 0;
+  function checkBanNameSuggestion(entry){
+    var myToken = ++banRequestToken;
+    var line = entry.latlngsList[0];
+    if(!line || !line.length) return;
+    var mid = line[Math.floor(line.length / 2)];
+    var controller = new AbortController();
+    var to = setTimeout(function(){ controller.abort(); }, 8000);
+    fetch(CONFIG.WORKER_URL.replace('/signalements', '/ban-proxy'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lon: mid[1], lat: mid[0] }),
+      signal: controller.signal
+    })
+    .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data){
+      if(myToken !== banRequestToken) return; // la route affichée a changé entre-temps
+      var names = (data && data.names) || [];
+      var currentLabel = roadDisplayLabel(entry);
+      var suggestion = names.find(function(n){ return n.toLowerCase() !== currentLabel.toLowerCase(); });
+      if(!suggestion) return;
+      document.getElementById('banSuggestionText').textContent = suggestion;
+      document.getElementById('banSuggestion').classList.remove('hidden');
+      document.getElementById('btnUseBanName').onclick = function(){
+        renameCurrentRoad(suggestion);
+      };
+    })
+    .catch(function(){ clearTimeout(to); /* échec silencieux, purement indicatif */ });
+  }
+
+  function renameCurrentRoad(newName){
+    var entry = queue[queueIndex];
+    var e = roadCoverage[entry.key] || { covered: false };
+    e.customName = newName;
+    roadCoverage[entry.key] = e;
+    document.getElementById('roadName').textContent = newName;
+    document.getElementById('banSuggestion').classList.add('hidden');
+    saveRoadCoverage().catch(function(){ /* sera retenté à la prochaine action */ });
   }
 
   async function commitAndNext(mutateFn){
