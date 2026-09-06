@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-j</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-k</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1969,6 +1969,14 @@
     var grouped = {}; // key -> { tags, label, roadClass, style, rawLines: [...] }
     osmData.elements.forEach(function(el){
       if(el.type !== 'way' || !el.geometry) return;
+      // Diagnostic : vérifie si la géométrie BRUTE reçue du Worker (avant
+      // tout traitement côté client) contient déjà des points invalides —
+      // permet de savoir si le souci vient de la source ou du traitement
+      // client (recollage/découpage).
+      var badRawPoint = el.geometry.find(function(pt){ return typeof pt.lat !== 'number' || typeof pt.lon !== 'number' || !isFinite(pt.lat) || !isFinite(pt.lon); });
+      if(badRawPoint){
+        console.warn('🔍 Géométrie brute déjà invalide à la source (Worker) pour', (el.tags && el.tags.name) || el.id, ':', JSON.stringify(badRawPoint), 'sur', el.geometry.length, 'points');
+      }
       var latlngs = el.geometry.map(function(pt){ return [pt.lat, pt.lon]; });
       var tags = el.tags || {};
       var key = roadKeyFor(tags, el.id);
@@ -2016,8 +2024,8 @@
         // seule route cassée interrompait toute la boucle et faisait
         // disparaître la moitié de la commune (bug vécu et corrigé).
         try{
-          if(!Array.isArray(seg) || seg.length < 2 || seg.some(function(p){ return !Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number'; })){
-            console.warn('Route "' + g.label + '" : tronçon avec des coordonnées invalides, ignoré.', seg);
+          if(!Array.isArray(seg) || seg.length < 2 || seg.some(function(p){ return !Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number' || !isFinite(p[0]) || !isFinite(p[1]); })){
+            console.warn('Route "' + g.label + '" : tronçon avec des coordonnées invalides, ignoré. Détail :', JSON.stringify(seg));
             return;
           }
           var line = L.polyline(seg, g.style);
