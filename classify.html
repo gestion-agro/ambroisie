@@ -97,6 +97,7 @@
     <a href="roads.html">📋 Tableau des routes</a>
     <a href="index.html">← Retour à la carte</a>
   </div>
+  <div id="confidentInfo" style="width:100%;font-size:12px;color:var(--muted);margin-top:4px;"></div>
 </div>
 
 <div id="banner">
@@ -243,35 +244,9 @@
     })
     .then(function(data){
       if(data && data.error) throw new Error(data.error);
-      onSuccess(data);
-    })
-    .catch(function(err){
-      clearTimeout(to);
-      console.warn('Relais BD TOPO (IGN) en échec:', err);
-      onFail();
-    });
-  }
-
-  // ---- Récupération des routes depuis la BD TOPO de l'IGN ----
-  // Relais via le Worker Cloudflare (infrastructure officielle française,
-  // indépendante d'OSM/Overpass).
-  function fetchFromBdTopo(bbox, onSuccess, onFail, timeoutMs){
-    timeoutMs = timeoutMs || 15000;
-    var controller = new AbortController();
-    var to = setTimeout(function(){ controller.abort(); }, timeoutMs);
-    fetch(CONFIG.WORKER_URL.replace('/signalements', '/bdtopo-proxy'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bbox: bbox }),
-      signal: controller.signal
-    })
-    .then(function(r){
-      clearTimeout(to);
-      if(!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(data){
-      if(data && data.error) throw new Error(data.error);
+      if(data && data.debug){
+        console.log('🔍 Diagnostic BD TOPO :', data.debug);
+      }
       onSuccess(data);
     })
     .catch(function(err){
@@ -348,7 +323,8 @@
         grouped[key] = {
           roadClass: classifyRoad(tags),
           label: tags.name ? tags.name : ('Voie sans nom (' + (tags.highway || '?') + ')'),
-          rawLines: []
+          rawLines: [],
+          confident: tags.confident === '1'
         };
       }
       grouped[key].rawLines.push(latlngs);
@@ -358,7 +334,7 @@
       var g = grouped[key];
       roadsIndex[key] = {
         key: key, label: g.label, roadClass: g.roadClass, originalClass: g.roadClass,
-        latlngsList: stitchSegmentsLoose(g.rawLines)
+        latlngsList: stitchSegmentsLoose(g.rawLines), confident: g.confident
       };
     });
     // La géométrie BD TOPO n'est plus mémorisée sur GitHub (rechargée à
@@ -486,16 +462,20 @@
 
   function buildQueue(){
     var reviewAll = document.getElementById('chkReviewAll').checked;
+    var confidentCount = 0;
     queue = Object.keys(roadsIndex)
       .map(function(k){ return roadsIndex[k]; })
       .filter(function(e){
         var cov = roadCoverage[e.key];
         if(cov && cov.hidden) return false; // déjà masquée, pas la peine de la revoir ici
         if(!reviewAll && cov && cov.reviewed) return false;
+        if(!reviewAll && e.confident){ confidentCount++; return false; } // classification fiable (voie_nommee) : pas besoin de la repasser en revue
         return true;
       });
     queue.sort(function(a,b){ return roadDisplayLabel(a).localeCompare(roadDisplayLabel(b), 'fr'); });
     queueIndex = 0;
+    var el = document.getElementById('confidentInfo');
+    if(el) el.textContent = confidentCount > 0 ? confidentCount + ' route(s) déjà classée(s) de façon fiable (masquée(s), voir la case ci-dessus pour les revoir aussi)' : '';
   }
 
   function showCurrent(){
@@ -531,13 +511,18 @@
     checkBanNameSuggestion(entry);
   }
 
+  var houseNumberLayer = L.layerGroup().addTo(map);
+
   // Vérifie le nom de la route auprès de la BAN (adresses les plus proches
   // du milieu du tracé) — utile pour repérer/corriger un nom douteux ou
   // absent dans la BD TOPO. Purement indicatif : n'affiche une suggestion
   // que si elle diffère du nom actuel, et ne fait rien automatiquement.
+  // Affiche aussi chaque numéro de maison trouvé, à sa position réelle sur
+  // la carte, pour aider à repérer/confirmer visuellement la bonne route.
   var banRequestToken = 0;
   function checkBanNameSuggestion(entry){
     var myToken = ++banRequestToken;
+    houseNumberLayer.clearLayers();
     var line = entry.latlngsList[0];
     if(!line || !line.length) return;
     var mid = line[Math.floor(line.length / 2)];
@@ -552,6 +537,18 @@
     .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(data){
       if(myToken !== banRequestToken) return; // la route affichée a changé entre-temps
+
+      var addresses = (data && data.addresses) || [];
+      addresses.forEach(function(a){
+        L.marker([a.lat, a.lon], {
+          icon: L.divIcon({
+            className: 'house-number-marker',
+            html: '<div style="background:#2f6bd6;color:#fff;font-size:11px;font-weight:700;padding:1px 5px;border-radius:4px;white-space:nowrap;box-shadow:1px 1px 2px rgba(0,0,0,.3);">' + a.number + '</div>',
+            iconSize: null
+          })
+        }).addTo(houseNumberLayer);
+      });
+
       var names = (data && data.names) || [];
       var currentLabel = roadDisplayLabel(entry);
       var suggestion = names.find(function(n){ return n.toLowerCase() !== currentLabel.toLowerCase(); });
