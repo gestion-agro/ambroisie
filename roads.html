@@ -84,7 +84,10 @@
         <option value="RC">Communale (RC)</option>
         <option value="RD">Départementale (RD)</option>
         <option value="RN">Nationale (RN)</option>
-        <option value="PATH">Chemin de terre/privé</option>
+        <option value="CHEMIN_COMMUNAL">Chemin communal</option>
+        <option value="CHEMIN_RURAL">Chemin rural</option>
+        <option value="CHEMIN_PRIVE">Chemin privé</option>
+        <option value="PATH">À classifier</option>
       </select>
     </div>
     <div class="field">
@@ -257,6 +260,10 @@
     if(/^D\s?\d/i.test(ref)) return 'RD';
     if(/^N\s?\d/i.test(ref)) return 'RN';
     if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    // "Chemin rural" confirmé officiellement par la BD TOPO (statut légal
+    // distinct, public) — pas la même chose qu'un chemin de terre détecté
+    // seulement par sa géométrie, qui lui reste "à classifier" (PATH).
+    if(tags.highway === 'chemin_rural') return 'CHEMIN_RURAL';
     if(tags.highway === 'track' || tags.highway === 'bridleway') return 'PATH';
     return 'RC';
   }
@@ -487,8 +494,8 @@
 
     document.getElementById('resultCount').textContent = entries.length + ' route(s) sur ' + Object.keys(roadsIndex).length;
 
-    var classColors = { RC:'#2f6b3a', RD:'#c9781f', RN:'#8a3fbf', PATH:'#8a8a8a' };
-    var classLabels = { RC:'Communale', RD:'Départementale', RN:'Nationale', PATH:'Privé' };
+    var classColors = { RC:'#2f6b3a', RD:'#c9781f', RN:'#8a3fbf', CHEMIN_RURAL:'#8a6d3b', CHEMIN_COMMUNAL:'#2f9e8f', CHEMIN_PRIVE:'#a1352b', PATH:'#8a8a8a' };
+    var classLabels = { RC:'Communale', RD:'Départementale', RN:'Nationale', CHEMIN_RURAL:'Chemin rural', CHEMIN_COMMUNAL:'Chemin communal', CHEMIN_PRIVE:'Chemin privé', PATH:'À classifier' };
     var isAdmin = currentRole === 'admin';
 
     var tbody = document.getElementById('tableBody');
