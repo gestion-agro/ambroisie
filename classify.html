@@ -36,7 +36,9 @@
   #classButtons button.current{outline:3px solid var(--line);outline-offset:-3px;}
   #classButtons button[data-class=RD]{border-color:#c9781f;}
   #classButtons button[data-class=RN]{border-color:#8a3fbf;}
-  #classButtons button[data-class=PATH]{border-color:#8a8a8a;}
+  #classButtons button[data-class=CHEMIN_RURAL]{border-color:#8a6d3b;}
+  #classButtons button[data-class=CHEMIN_COMMUNAL]{border-color:#2f9e8f;}
+  #classButtons button[data-class=CHEMIN_PRIVE]{border-color:#a1352b;}
   #classButtons button[data-class=RC]{border-color:#2f6b3a;}
   #secondaryActions{display:flex;gap:8px;}
   #secondaryActions button{
@@ -111,7 +113,9 @@
     <button data-class="RC">Communale (RC)</button>
     <button data-class="RD">Départementale (RD)</button>
     <button data-class="RN">Nationale (RN)</button>
-    <button data-class="PATH">Chemin de terre / privé</button>
+    <button data-class="CHEMIN_COMMUNAL">Chemin communal</button>
+    <button data-class="CHEMIN_RURAL">Chemin rural</button>
+    <button data-class="CHEMIN_PRIVE">Chemin privé</button>
   </div>
   <div id="secondaryActions">
     <button id="btnSkip">Passer, décider plus tard</button>
@@ -261,6 +265,10 @@
     if(/^D\s?\d/i.test(ref)) return 'RD';
     if(/^N\s?\d/i.test(ref)) return 'RN';
     if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    // "Chemin rural" confirmé officiellement par la BD TOPO (statut légal
+    // distinct, public) — pas la même chose qu'un chemin de terre détecté
+    // seulement par sa géométrie, qui lui reste "à classifier" (PATH).
+    if(tags.highway === 'chemin_rural') return 'CHEMIN_RURAL';
     if(tags.highway === 'track' || tags.highway === 'bridleway') return 'PATH';
     return 'RC';
   }
@@ -418,7 +426,13 @@
     return custom || entry.label;
   }
   function roadClassLabel(cls){
-    return cls === 'RD' ? 'Départementale (RD)' : (cls === 'RN' ? 'Nationale (RN)' : (cls === 'PATH' ? 'Chemin de terre / privé' : 'Communale (RC)'));
+    if(cls === 'RD') return 'Départementale (RD)';
+    if(cls === 'RN') return 'Nationale (RN)';
+    if(cls === 'CHEMIN_RURAL') return 'Chemin rural';
+    if(cls === 'CHEMIN_COMMUNAL') return 'Chemin communal';
+    if(cls === 'CHEMIN_PRIVE') return 'Chemin privé';
+    if(cls === 'PATH') return 'Chemin à classifier';
+    return 'Communale (RC)';
   }
 
   // Fusionne les routes tracées manuellement (mémorisées avec leur géométrie
