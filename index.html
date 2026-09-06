@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-k</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-l</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1589,7 +1589,12 @@
       }
     });
     if(current.length) segments.push(current);
-    return segments;
+    // Un point isolé qui rentre puis ressort aussitôt de la commune (frontière
+    // imprécise) forme son propre "segment" d'un seul point — impossible à
+    // dessiner comme ligne, et rejeté plus loin avec un avertissement à
+    // chaque fois. On le filtre ici directement, silencieusement : ce n'est
+    // pas une vraie portion de route, juste un artefact du découpage.
+    return segments.filter(function(seg){ return seg.length >= 2; });
   }
 
   // Convertit une géométrie GeoJSON (Polygon ou MultiPolygon, coordonnées en
@@ -1905,7 +1910,12 @@
       }
     });
     if(current.length) segments.push(current);
-    return segments;
+    // Voir le même filtre dans clipLineToCommuneWithMargin : un point isolé
+    // qui rentre puis ressort aussitôt du contour forme son propre
+    // "segment" d'un seul point, impossible à dessiner et rejeté plus loin
+    // avec un avertissement — filtré ici silencieusement, ce n'est pas une
+    // vraie portion de route.
+    return segments.filter(function(seg){ return seg.length >= 2; });
   }
 
   // Comme stitchSegments, mais avec une tolérance plus généreuse (~2m) : les
