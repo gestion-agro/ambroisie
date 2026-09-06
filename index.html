@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-i</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-j</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -472,7 +472,10 @@
     <div style="padding-left:22px;"><span class="sw" style="border-top:2px dashed #2f6b3a;background:none;"></span> ↳ parcourue</div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsPath" style="margin:0;"> <span class="sw" style="background:#a8a8a8"></span> Chemins de terre/privés (indicatif)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsPath" style="margin:0;"> <span class="sw" style="background:#a8a8a8"></span> Chemins à classifier (indicatif)</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminRural" style="margin:0;"> <span class="sw" style="background:#8a6d3b"></span> Chemins ruraux</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminCommunal" style="margin:0;"> <span class="sw" style="background:#2f9e8f"></span> Chemins communaux</label></div>
+    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminPrive" style="margin:0;"> <span class="sw" style="background:#a1352b"></span> Chemins privés</label></div>
     <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkCadastre" style="margin:0;"> <span class="sw" style="border:2px solid #444;background:none;width:12px;height:12px;"></span> Cadastre (parcelles)</label></div>
     <div id="chkUnnamedRoadsRow" class="hidden"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkUnnamedRoads" style="margin:0;"> <span class="sw" style="background:#1c6fd9"></span> Routes sans nom (admin)</label></div>
     <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
@@ -822,7 +825,21 @@
   var roadsLayerRC = L.layerGroup().addTo(map);
   var roadsLayerRD = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
   var roadsLayerRN = L.layerGroup(); // pas ajoutée à la carte par défaut (case décochée)
-  var roadsLayerPath = L.layerGroup(); // chemins de terre/privés, indicatif seulement, désactivé par défaut
+  var roadsLayerPath = L.layerGroup(); // chemins détectés mais pas encore classifiés, indicatif, désactivé par défaut
+  var roadsLayerCheminRural = L.layerGroup(); // confirmé par la BD TOPO, désactivé par défaut
+  var roadsLayerCheminCommunal = L.layerGroup(); // classifié manuellement, désactivé par défaut
+  var roadsLayerCheminPrive = L.layerGroup(); // classifié manuellement, désactivé par défaut
+  var ALL_ROAD_LAYERS = [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath, roadsLayerCheminRural, roadsLayerCheminCommunal, roadsLayerCheminPrive];
+
+  function layerForRoadClass(cls){
+    if(cls === 'RD') return roadsLayerRD;
+    if(cls === 'RN') return roadsLayerRN;
+    if(cls === 'CHEMIN_RURAL') return roadsLayerCheminRural;
+    if(cls === 'CHEMIN_COMMUNAL') return roadsLayerCheminCommunal;
+    if(cls === 'CHEMIN_PRIVE') return roadsLayerCheminPrive;
+    if(cls === 'PATH') return roadsLayerPath;
+    return roadsLayerRC;
+  }
   // Boîte englobante utilisée pour interroger les routes (BD TOPO) autour de
   // la commune, et pour borner la couche cadastre.
   var BBOX = { south: 44.870, west: 4.410, north: 44.998, east: 4.565 };
@@ -999,7 +1016,7 @@
       var entry = { key: key, label: cov.customName || cov.label || key, roadClass: roadClass, originalClass: originalClass, polylines: [], baseStyle: style, latlngsList: cov.latlngsList };
       cov.latlngsList.forEach(function(latlngs){
         var line = L.polyline(latlngs, style);
-        var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+        var targetLayer = layerForRoadClass(roadClass);
         line.addTo(targetLayer);
         line.on('click', function(){ openRoadQuickView(key); });
         entry.polylines.push(line);
@@ -1031,7 +1048,13 @@
   // Ouvre une petite boîte de dialogue au clic sur une route de la carte,
   // pour la marquer parcourue sans avoir à chercher dans la liste complète.
   function roadClassLabel(cls){
-    return cls === 'RD' ? 'Départementale (RD)' : (cls === 'RN' ? 'Nationale (RN)' : (cls === 'PATH' ? 'Chemin de terre / privé' : 'Communale (RC)'));
+    if(cls === 'RD') return 'Départementale (RD)';
+    if(cls === 'RN') return 'Nationale (RN)';
+    if(cls === 'CHEMIN_RURAL') return 'Chemin rural';
+    if(cls === 'CHEMIN_COMMUNAL') return 'Chemin communal';
+    if(cls === 'CHEMIN_PRIVE') return 'Chemin privé';
+    if(cls === 'PATH') return 'Chemin à classifier';
+    return 'Communale (RC)';
   }
 
   function openRoadQuickView(key){
@@ -1095,7 +1118,9 @@
         { label: 'Communale (RC)', value: 'RC', primary: entry.roadClass === 'RC' },
         { label: 'Départementale (RD)', value: 'RD', primary: entry.roadClass === 'RD' },
         { label: 'Nationale (RN)', value: 'RN', primary: entry.roadClass === 'RN' },
-        { label: 'Chemin de terre / privé', value: 'PATH', primary: entry.roadClass === 'PATH' }
+        { label: 'Chemin communal', value: 'CHEMIN_COMMUNAL', primary: entry.roadClass === 'CHEMIN_COMMUNAL' },
+        { label: 'Chemin rural', value: 'CHEMIN_RURAL', primary: entry.roadClass === 'CHEMIN_RURAL' },
+        { label: 'Chemin privé', value: 'CHEMIN_PRIVE', primary: entry.roadClass === 'CHEMIN_PRIVE', danger: true }
       ]
     }).then(function(newClass){
       if(!newClass) return;
@@ -1290,9 +1315,9 @@
       roadCoverage[key] = e;
       var entry = roadsIndex[key];
       if(entry){
-        entry.polylines.forEach(function(line){ [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); }); });
+        entry.polylines.forEach(function(line){ ALL_ROAD_LAYERS.forEach(function(l){ l.removeLayer(line); }); });
         entry.latlngsList = e.customGeometry.map(function(s){ return s.slice(); });
-        var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+        var targetLayer = layerForRoadClass(entry.roadClass);
         entry.polylines = entry.latlngsList.map(function(seg){
           var newLine = L.polyline(seg, entry.baseStyle);
           newLine.addTo(targetLayer);
@@ -1323,7 +1348,9 @@
         { label: 'Communale (RC)', value: 'RC', primary: true },
         { label: 'Départementale (RD)', value: 'RD' },
         { label: 'Nationale (RN)', value: 'RN' },
-        { label: 'Chemin de terre / privé', value: 'PATH' }
+        { label: 'Chemin communal', value: 'CHEMIN_COMMUNAL' },
+        { label: 'Chemin rural', value: 'CHEMIN_RURAL' },
+        { label: 'Chemin privé', value: 'CHEMIN_PRIVE', danger: true }
       ]
     });
     if(!choice) return;
@@ -1357,10 +1384,14 @@
       // Les routes masquées manuellement (corrections d'erreurs) n'apparaissent
       // jamais ici — récupérables depuis la page dédiée "Tableau des routes".
       .filter(function(e){ return !(roadCoverage[e.key] && roadCoverage[e.key].hidden); })
-      // Les chemins de terre/privés n'apparaissent ici que s'ils ont été
-      // explicitement marqués "parcourus" depuis la carte — sinon ils
-      // encombreraient la liste sans concerner l'arrachage mairie.
-      .filter(function(e){ return e.roadClass !== 'PATH' || isRoadCovered(e.key); });
+      // Les chemins (à classifier, ruraux, communaux ou privés) n'apparaissent
+      // ici que s'ils ont été explicitement marqués "parcourus" depuis la
+      // carte — sinon ils encombreraient la liste sans concerner l'arrachage
+      // mairie de la même façon qu'une vraie route.
+      .filter(function(e){
+        var isChemin = e.roadClass === 'PATH' || e.roadClass === 'CHEMIN_RURAL' || e.roadClass === 'CHEMIN_COMMUNAL' || e.roadClass === 'CHEMIN_PRIVE';
+        return !isChemin || isRoadCovered(e.key);
+      });
     entries.sort(function(a,b){ return roadDisplayLabel(a).localeCompare(roadDisplayLabel(b), 'fr'); });
     if(filterText){
       var q = filterText.toLowerCase();
@@ -1708,6 +1739,10 @@
     if(/^D\s?\d/i.test(ref)) return 'RD';
     if(/^N\s?\d/i.test(ref)) return 'RN';
     if(tags.highway === 'trunk' || tags.highway === 'motorway') return 'RN';
+    // "Chemin rural" confirmé officiellement par la BD TOPO (statut légal
+    // distinct, public) — pas la même chose qu'un chemin de terre détecté
+    // seulement par sa géométrie, qui lui reste "à classifier" (PATH).
+    if(tags.highway === 'chemin_rural') return 'CHEMIN_RURAL';
     // Chemins de terre / d'exploitation, chemins équestres, souvent en terrain
     // privé, non praticables ou peu praticables en voiture, et hors ressort de
     // la mairie pour l'arrachage : on les met à part, pas avec les vraies routes.
@@ -1724,8 +1759,17 @@
     } else if(roadClass === 'RN'){
       color = '#8a3fbf'; // violet : nationale
       w = 6;
+    } else if(roadClass === 'CHEMIN_RURAL'){
+      color = '#8a6d3b'; // brun : chemin rural, statut légal public confirmé
+      w = 3; dash = '1 4';
+    } else if(roadClass === 'CHEMIN_COMMUNAL'){
+      color = '#2f9e8f'; // sarcelle : chemin communal, classifié manuellement
+      w = 3; dash = '1 4';
+    } else if(roadClass === 'CHEMIN_PRIVE'){
+      color = '#a1352b'; // rouge : chemin privé, classifié manuellement
+      w = 3; dash = '1 4';
     } else if(roadClass === 'PATH'){
-      color = '#a8a8a8'; // gris clair : chemin de terre/privé, indicatif seulement
+      color = '#a8a8a8'; // gris clair : chemin détecté mais pas encore classifié
       w = 2; dash = '1 6';
     } else {
       // Style RC selon le type de voie
@@ -1775,14 +1819,11 @@
   function styleForClass(roadClass){
     if(roadClass === 'RD') return { color:'#c9781f', weight:5, opacity:0.85, dashArray:null };
     if(roadClass === 'RN') return { color:'#8a3fbf', weight:6, opacity:0.85, dashArray:null };
+    if(roadClass === 'CHEMIN_RURAL') return { color:'#8a6d3b', weight:3, opacity:0.85, dashArray:'1 4' };
+    if(roadClass === 'CHEMIN_COMMUNAL') return { color:'#2f9e8f', weight:3, opacity:0.85, dashArray:'1 4' };
+    if(roadClass === 'CHEMIN_PRIVE') return { color:'#a1352b', weight:3, opacity:0.85, dashArray:'1 4' };
     if(roadClass === 'PATH') return { color:'#a8a8a8', weight:2, opacity:0.85, dashArray:'1 6' };
     return { color:'#2f6b3a', weight:4, opacity:0.85, dashArray:null };
-  }
-  function layerForClass(roadClass){
-    if(roadClass === 'RD') return roadsLayerRD;
-    if(roadClass === 'RN') return roadsLayerRN;
-    if(roadClass === 'PATH') return roadsLayerPath;
-    return roadsLayerRC;
   }
 
   // Applique les corrections manuelles (reclassification, masquage) faites
@@ -1803,9 +1844,9 @@
         entry.baseStyle = styleForClass(effectiveClass);
       }
 
-      var targetLayer = layerForClass(effectiveClass);
+      var targetLayer = layerForRoadClass(effectiveClass);
       entry.polylines.forEach(function(line){
-        [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(lyr){ lyr.removeLayer(line); });
+        ALL_ROAD_LAYERS.forEach(function(lyr){ lyr.removeLayer(line); });
         if(!hidden){
           targetLayer.addLayer(line);
           if(changed) line.setStyle(entry.baseStyle);
@@ -1833,8 +1874,10 @@
         } else if(!covered){
           line.setStyle(entry.baseStyle);
         } else if(entry.roadClass === 'PATH'){
-          // Chemin de terre/privé marqué parcouru : bleu pointillé, distinct
-          // du gris pointillé "indicatif" par défaut.
+          // Chemin "à classifier" marqué parcouru : bleu pointillé, distinct
+          // du gris pointillé "indicatif" par défaut. Les chemins déjà
+          // classifiés (rural/communal/privé) gardent leur propre couleur
+          // via la branche ci-dessous.
           line.setStyle({ color:'#2f6bd6', weight: entry.baseStyle.weight, opacity:0.75, dashArray:'2 6' });
         } else {
           // Route officielle parcourue : on garde SA couleur d'origine
@@ -1966,7 +2009,7 @@
       if(finalSegments.length === 0) return; // route entièrement hors commune
 
       roadsIndex[key] = { key: key, label: g.label, roadClass: g.roadClass, originalClass: g.roadClass, polylines: [], baseStyle: g.style, latlngsList: [] };
-      var targetLayer = g.roadClass === 'RD' ? roadsLayerRD : (g.roadClass === 'RN' ? roadsLayerRN : (g.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+      var targetLayer = layerForRoadClass(g.roadClass);
       finalSegments.forEach(function(seg){
         // Une route avec des coordonnées invalides ne doit JAMAIS empêcher
         // l'affichage des routes suivantes — sans ce filet de sécurité, une
@@ -2022,7 +2065,7 @@
             return;
           }
           var line = L.polyline(latlngs, style);
-          var targetLayer = roadClass === 'RD' ? roadsLayerRD : (roadClass === 'RN' ? roadsLayerRN : (roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+          var targetLayer = layerForRoadClass(roadClass);
           line.addTo(targetLayer);
           line.on('click', function(){ openRoadQuickView(key); });
           entry.polylines.push(line);
@@ -2050,9 +2093,9 @@
       if(!customGeom || !customGeom.length || !entry) return;
       if(JSON.stringify(entry.latlngsList) === JSON.stringify(customGeom)) return; // déjà appliqué
       entry.polylines.forEach(function(line){
-        [roadsLayerRC, roadsLayerRD, roadsLayerRN, roadsLayerPath].forEach(function(l){ l.removeLayer(line); });
+        ALL_ROAD_LAYERS.forEach(function(l){ l.removeLayer(line); });
       });
-      var targetLayer = entry.roadClass === 'RD' ? roadsLayerRD : (entry.roadClass === 'RN' ? roadsLayerRN : (entry.roadClass === 'PATH' ? roadsLayerPath : roadsLayerRC));
+      var targetLayer = layerForRoadClass(entry.roadClass);
       entry.polylines = [];
       entry.latlngsList = [];
       customGeom.forEach(function(seg){
@@ -2892,7 +2935,7 @@
   // Mémorise les calques/filtres activés ou désactivés, pour les retrouver
   // tels quels à la prochaine connexion — évite de tout recocher à chaque fois.
   var PREF_CHECKBOXES = [
-    'chkRoadsRC','chkRoadsRD','chkRoadsRN','chkRoadsPath','chkCadastre',
+    'chkRoadsRC','chkRoadsRD','chkRoadsRN','chkRoadsPath','chkRoadsCheminRural','chkRoadsCheminCommunal','chkRoadsCheminPrive','chkCadastre',
     'chkSigATraiter','chkSigTraite','chkSigDoublon','chkSigPasAmbroisie',
     'chkSigDeptNonEnvoye','chkSigDeptEnvoye','chkSigCitoyen'
   ];
@@ -4577,6 +4620,18 @@
   });
   document.getElementById('chkRoadsPath').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerPath); } else { map.removeLayer(roadsLayerPath); }
+    savePreferences();
+  });
+  document.getElementById('chkRoadsCheminRural').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerCheminRural); } else { map.removeLayer(roadsLayerCheminRural); }
+    savePreferences();
+  });
+  document.getElementById('chkRoadsCheminCommunal').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerCheminCommunal); } else { map.removeLayer(roadsLayerCheminCommunal); }
+    savePreferences();
+  });
+  document.getElementById('chkRoadsCheminPrive').addEventListener('change', function(e){
+    if(e.target.checked){ map.addLayer(roadsLayerCheminPrive); } else { map.removeLayer(roadsLayerCheminPrive); }
     savePreferences();
   });
 
