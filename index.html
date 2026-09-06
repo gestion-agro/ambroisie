@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-l</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-m</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1513,10 +1513,36 @@
     }, onFail, 15000);
   }
 
+  // Réduit la précision des coordonnées à 5 décimales (~1m, largement
+  // suffisant pour l'affichage) avant la mise en cache locale — le quota de
+  // stockage du navigateur (5-10 Mo selon les cas) est vite dépassé avec la
+  // géométrie complète de toutes les routes en pleine précision, maintenant
+  // que la zone couverte inclut aussi les couches complémentaires (voie
+  // ferrée, itinéraires...).
+  function roundCacheGeometry(node){
+    if(!node || typeof node !== 'object') return node;
+    if(typeof node.lat === 'number' && typeof node.lon === 'number'){
+      return { lat: Math.round(node.lat * 1e5) / 1e5, lon: Math.round(node.lon * 1e5) / 1e5 };
+    }
+    if(Array.isArray(node)) return node.map(roundCacheGeometry);
+    var out = {};
+    Object.keys(node).forEach(function(k){ out[k] = roundCacheGeometry(node[k]); });
+    return out;
+  }
+
   function saveCache(data, precision){
     try{
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), precision: precision || 'bbox', data: data }));
-    } catch(e){ console.warn('Sauvegarde cache impossible', e); }
+      var reduced = { elements: (data.elements || []).map(function(el){
+        return { type: el.type, id: el.id, tags: el.tags, geometry: roundCacheGeometry(el.geometry) };
+      }) };
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), precision: precision || 'bbox', data: reduced }));
+    } catch(e){
+      // Toujours pas de place même réduit (quota déjà bas dans ce
+      // navigateur, ou données vraiment volumineuses) : pas grave, l'appli
+      // fonctionne très bien sans ce cache local, elle re-téléchargera
+      // simplement à chaque fois plutôt que d'avoir un affichage instantané.
+      console.warn('Sauvegarde cache impossible (non bloquant)', e);
+    }
   }
 
   // ================= LIMITE COMMUNALE (contour + test dedans/dehors) =================
