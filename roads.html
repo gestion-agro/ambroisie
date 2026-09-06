@@ -262,9 +262,13 @@
   }
   // Clé stable, indépendante de la classification (nécessaire pour pouvoir
   // reclasser une route sans perdre son historique).
+  // Normalise le nom (espaces en trop, casse) avant de l'utiliser comme clé
+  // de regroupement — sans ça, une légère variation d'un tronçon à l'autre
+  // (fréquente dans les données) faisait apparaître la même route sous
+  // plusieurs entrées séparées, chacune avec seulement un morceau du tracé.
   function roadKeyFor(tags, elId){
-    if(tags.name) return tags.name;
-    if(tags.ref) return tags.ref;
+    if(tags.name) return tags.name.trim().replace(/\s+/g, ' ');
+    if(tags.ref) return tags.ref.trim();
     return 'way' + elId;
   }
   function legacyKeySuffix(key){
@@ -283,7 +287,7 @@
   function stitchSegmentsLoose(segments){
     var segs = segments.map(function(s){ return s.slice(); });
     var rings = [];
-    function eq(a, b){ return Math.abs(a[0]-b[0]) < 0.00002 && Math.abs(a[1]-b[1]) < 0.00002; }
+    function eq(a, b){ return Math.abs(a[0]-b[0]) < 0.0005 && Math.abs(a[1]-b[1]) < 0.0005; }
     while(segs.length){
       var ring = segs.shift();
       var changed = true;
