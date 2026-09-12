@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-q</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-r</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1439,37 +1439,13 @@
   }
 
   function loadCommuneRoads(){
-    var staleCache = null;
-    // 1) Essayer le cache local d'abord — instantané, fonctionne hors ligne
-    try{
-      var cached = localStorage.getItem(CACHE_KEY);
-      if(cached){
-        var parsed = JSON.parse(cached);
-        var ageDays = (Date.now() - parsed.savedAt) / (1000*60*60*24);
-        var isPrecise = parsed.precision === 'insee';
-        if(ageDays < CACHE_MAX_AGE_DAYS){
-          drawRoads(parsed.data);
-          hideLoading();
-          if(isPrecise){
-            // Cache déjà précis et récent : simple rafraîchissement discret en arrière-plan
-            loadRoadsData(function(data, precision){
-              roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers(); roadsLayerPath.clearLayers();
-              drawRoads(data);
-              saveCache(data, precision);
-            }, function(){ /* échec silencieux, on garde le cache précis existant */ });
-            return;
-          }
-          // Le cache existant vient du rectangle de secours (pas garanti précis) :
-          // on continue vers une VRAIE tentative réseau ci-dessous plutôt que de
-          // s'arrêter là, pour ne pas rester bloqué indéfiniment sur un rectangle.
-        } else {
-          staleCache = parsed.data;
-        }
-      }
-    } catch(e){ console.warn('Lecture cache impossible', e); }
-
-    // 2) Télécharger (ou re-télécharger si le cache n'était que le rectangle),
-    // avec timeout et bouton d'échappement
+    // Le cache local du navigateur n'est plus utilisé du tout (ni en lecture,
+    // ni en écriture) : la BD TOPO se charge désormais de façon fiable et
+    // assez rapide (pagination), donc plus besoin de ce filet de secours —
+    // qui posait justement problème : un ancien cache resté dans le
+    // navigateur (d'une session avant une correction) s'affichait d'abord,
+    // avant d'être remplacé par les données fraîches, donnant l'impression
+    // qu'un morceau de route "disparaissait" après le chargement.
     var skipTimer = setTimeout(function(){
       var box = document.getElementById('loading');
       if(box.classList.contains('hidden')) return;
@@ -1490,17 +1466,11 @@
       clearTimeout(skipTimer);
       roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers(); roadsLayerPath.clearLayers();
       drawRoads(data);
-      saveCache(data, precision);
       hideLoading();
     }, function(){
       clearTimeout(skipTimer);
       hideLoading();
-      if(staleCache){
-        console.warn('Réseau indisponible : affichage des routes en cache (peut-être périmées).');
-        drawRoads(staleCache);
-      } else {
-        showLoadError('Impossible de contacter OpenStreetMap pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
-      }
+      showLoadError('Impossible de contacter la BD TOPO (IGN) pour récupérer les routes. Vérifiez votre connexion internet et réessayez. La carte de base et le GPS restent utilisables.');
     });
   }
 
@@ -1521,9 +1491,11 @@
   // maintenant de façon fiable et rapide (pagination), donc pas besoin de ce
   // filet de secours local — l'appli re-télécharge simplement à chaque
   // ouverture plutôt que d'avoir un affichage instantané depuis le cache.
-  function saveCache(data, precision){
-    // Volontairement no-op — voir commentaire ci-dessus.
-  }
+  //
+  // Un ancien cache resté dans le navigateur (d'avant cette désactivation)
+  // n'est plus jamais lu, mais on le supprime explicitement une bonne fois
+  // pour libérer la place — il ne servait plus à rien de toute façon.
+  try{ localStorage.removeItem(CACHE_KEY); } catch(e){ /* pas grave */ }
 
   // ================= LIMITE COMMUNALE (contour + test dedans/dehors) =================
   var BOUNDARY_CACHE_KEY = 'ambroisie_boundary_belsentes_v3';
@@ -4715,7 +4687,6 @@
     loadRoadsData(function(data, precision){
       roadsLayerRC.clearLayers(); roadsLayerRD.clearLayers(); roadsLayerRN.clearLayers(); roadsLayerPath.clearLayers();
       drawRoads(data);
-      saveCache(data, precision);
       btn.disabled = false;
       btn.textContent = '↻ Recharger les routes';
     }, function(){
