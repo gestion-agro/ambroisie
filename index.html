@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-p</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-q</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1825,6 +1825,19 @@
     if(tags.ref) return tags.ref.trim();
     return 'way' + elId;
   }
+  // Étiquette affichée : pour une RD/RN, toujours SON NUMÉRO ("D 21"), jamais
+  // le nom d'un tronçon particulier — une même départementale porte souvent
+  // plusieurs noms locaux différents sur sa longueur (ex: "Route de Vernoux"
+  // d'un côté, "Route de Saint-Agrève" de l'autre), et afficher le nom du
+  // premier tronçon rencontré au hasard créait une étiquette trompeuse, qui
+  // ne correspondait à aucune des vraies appellations sur le terrain.
+  function roadLabelFor(tags){
+    if(tags.ref && /^[DNA]\s?\d/i.test(tags.ref.trim())){
+      var m = tags.ref.trim().toUpperCase().match(/^([DNA])\s?(\d+.*)$/);
+      return m ? (m[1] + ' ' + m[2]) : tags.ref.trim();
+    }
+    return null; // pas une RD/RN : le nom normal reste utilisé ailleurs
+  }
   // Ancien format de clé (avant cette correction), pour migrer en douceur les
   // données déjà enregistrées sans rien perdre.
   function legacyKeySuffix(key){
@@ -2009,7 +2022,7 @@
         var roadClass = classifyRoad(tags);
         grouped[key] = {
           tags: tags, roadClass: roadClass, style: roadStyle(tags.highway, roadClass),
-          label: tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')'),
+          label: roadLabelFor(tags) || (tags.name ? tags.name : ('Voie (' + (tags.highway || '?') + ')')),
           rawLines: []
         };
       }
