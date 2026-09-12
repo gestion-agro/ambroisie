@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-t</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-u</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -2093,6 +2093,7 @@
     applyRoadClassOverrides();
     applyRoadCoverageStyling();
     drawStoredManualRoads();
+    syncRDRNGeometryToCloud();
     if(bounds.length){
       roadBounds = L.latLngBounds(bounds);
       if(!hasCenteredOnce){
@@ -2100,6 +2101,46 @@
         hasCenteredOnce = true;
       }
     }
+  }
+
+  // Réduit la précision des coordonnées à 5 décimales (~1m) et retire les
+  // doublons consécutifs, avant mémorisation sur GitHub.
+  function roundGeometryForStorage(seg){
+    var out = [];
+    seg.forEach(function(p){
+      var r = [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5];
+      var last = out[out.length - 1];
+      if(!last || last[0] !== r[0] || last[1] !== r[1]) out.push(r);
+    });
+    return out;
+  }
+
+  // Les routes départementales/nationales sont peu nombreuses et stables
+  // (leur tracé général ne change quasiment jamais) — dès qu'une RD/RN est
+  // chargée avec succès depuis la BD TOPO pour la première fois, son tracé
+  // est mémorisé durablement sur GitHub, exactement comme pour les routes du
+  // registre officiel. Ensuite, plus besoin de recontacter la BD TOPO pour
+  // CETTE route précise : elle se charge instantanément depuis la mémoire,
+  // même si le service IGN est indisponible ce jour-là.
+  var rdRnSyncPending = false;
+  function syncRDRNGeometryToCloud(){
+    if(!sessionToken || rdRnSyncPending) return;
+    var changed = false;
+    Object.keys(roadsIndex).forEach(function(key){
+      var entry = roadsIndex[key];
+      if(entry.roadClass !== 'RD' && entry.roadClass !== 'RN') return;
+      var cov = roadCoverage[key];
+      if(cov && cov.customGeometry && cov.customGeometry.length) return; // déjà mémorisée
+      if(!entry.latlngsList || !entry.latlngsList.length) return;
+      if(!cov){ cov = {}; roadCoverage[key] = cov; }
+      cov.customGeometry = entry.latlngsList.map(roundGeometryForStorage);
+      changed = true;
+    });
+    if(!changed) return;
+    rdRnSyncPending = true;
+    saveRoadCoverage()
+      .catch(function(){ /* pas grave, on retentera au prochain chargement */ })
+      .finally(function(){ rdRnSyncPending = false; });
   }
 
   // Une fois une route récupérée depuis la BD TOPO au moins une fois (par
