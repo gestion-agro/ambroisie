@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-r</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-s</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -679,7 +679,7 @@
       </div>
       <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
         <h3 style="font-size:14px;color:var(--danger);">⚠️ Réinitialiser la classification des routes</h3>
-        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface les noms/classifications mémorisés (suite à un bug de migration) et force un rechargement propre depuis OpenStreetMap. Les routes déjà marquées "parcourues" restent parcourues.</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface les noms/classifications mémorisés (suite à un bug de migration) et force un rechargement propre depuis la BD TOPO. Les routes déjà marquées "parcourues" restent parcourues.</p>
         <button class="btn" id="btnResetRoadClassification" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Réinitialiser les routes</button>
       </div>
     </div>
@@ -763,7 +763,7 @@
 <div id="loading">
   <div class="spinner"></div>
   <h2>Chargement des routes de Belsentes…</h2>
-  <p>Récupération du réseau routier communal depuis OpenStreetMap (10 à 20 secondes en général). Une fois chargées, les routes seront mises en cache et s'afficheront instantanément la prochaine fois.</p>
+  <p>Récupération du réseau routier communal depuis la BD TOPO de l'IGN (quelques secondes en général).</p>
   <div id="loadErr" style="display:none" class="err-box"></div>
 </div>
 
@@ -949,7 +949,7 @@
             customGeometry: item.customGeometry || null
           };
         });
-        // Si OpenStreetMap n'a jamais répondu (aucune route affichée), on
+        // Si la BD TOPO n'a jamais répondu (aucune route affichée), on
         // reconstruit tout depuis la géométrie mémorisée sur GitHub — ça
         // fonctionne même si OSM est complètement injoignable, du moment que
         // quelqu'un a déjà chargé les routes une fois avec succès avant.
@@ -1025,7 +1025,7 @@
       roadsIndex[key] = entry;
     });
     if(found){
-      console.warn('Routes reconstruites depuis la mémoire GitHub (OpenStreetMap injoignable).');
+      console.warn('Routes reconstruites depuis la mémoire GitHub (BD TOPO injoignable).');
       hideLoading();
       if(bounds.length && !hasCenteredOnce){
         roadBounds = L.latLngBounds(bounds);
@@ -1090,7 +1090,7 @@
   }
 
   // Renommage d'une route (admin uniquement), utile pour les nombreuses voies
-  // sans nom dans OpenStreetMap mais connues sur le terrain.
+  // sans nom dans la BD TOPO mais connues sur le terrain.
   function renameRoad(key, entry){
     var current = roadDisplayLabel(entry);
     var newName = prompt('Nouveau nom pour cette route :', current);
@@ -1138,7 +1138,7 @@
   }
 
   // Masque une route qui n'a rien à faire sur la carte (doublon, erreur de
-  // tracé...) sans la supprimer d'OpenStreetMap — juste ne plus l'afficher ici.
+  // tracé...) sans la supprimer de la BD TOPO — juste ne plus l'afficher ici.
   function hideRoad(key, entry){
     customConfirm('Masquer "' + roadDisplayLabel(entry) + '" ? Elle disparaîtra de la carte et du suivi des routes (récupérable depuis la page dédiée "Tableau des routes").', 'Masquer cette route')
       .then(function(ok){
@@ -1152,7 +1152,7 @@
   }
 
   // ================= AJOUT MANUEL D'UNE ROUTE (admin) =================
-  // Pour une route existante sur le terrain mais absente d'OpenStreetMap.
+  // Pour une route existante sur le terrain mais absente de la BD TOPO.
   // Système de tracé unifié (création d'une nouvelle route OU modification
   // d'une route existante) — gère PLUSIEURS morceaux à la fois (une route
   // peut légitimement être en plusieurs tronçons disjoints, par exemple
@@ -1832,7 +1832,7 @@
   }
 
   // Applique les corrections manuelles (reclassification, masquage) faites
-  // par un admin — utile car les données OpenStreetMap sont parfois fausses
+  // par un admin — utile car les données de la BD TOPO sont parfois fausses
   // par rapport au cadastre réel (route dite "communale" alors qu'elle est
   // privée, ou l'inverse). On mémorise la correction plutôt que de corriger
   // OSM lui-même, donc c'est appliqué à chaque chargement.
@@ -2062,13 +2062,13 @@
     }
   }
 
-  // Une fois une route récupérée depuis OpenStreetMap au moins une fois (par
+  // Une fois une route récupérée depuis la BD TOPO au moins une fois (par
   // n'importe quel conseiller), sa forme est mémorisée durablement sur GitHub
-  // (via road-coverage.json). Ainsi, plus besoin de recontacter OpenStreetMap
+  // (via road-coverage.json). Ainsi, plus besoin de recontacter la BD TOPO
   // au quotidien — utile si la connexion est mauvaise ou si le service est
   // indisponible.
   // Reconstruit sur la carte les routes ajoutées manuellement (sans lien avec
-  // OpenStreetMap), à partir de la géométrie mémorisée sur GitHub.
+  // la BD TOPO), à partir de la géométrie mémorisée sur GitHub.
   function drawStoredManualRoads(){
     Object.keys(roadCoverage).forEach(function(key){
       var cov = roadCoverage[key];
@@ -3467,7 +3467,7 @@
 
   document.getElementById('btnResetRoadClassification').addEventListener('click', async function(){
     var ok = await customConfirm(
-      'Ceci efface les noms, classifications (RC/RD/RN/privé) et formes de routes mémorisés — à cause d\'un bug de migration passé, elles sont toutes tombées en "Communale". Les routes déjà marquées "parcourues" gardent leur statut, elles seront juste re-nommées/reclassées au prochain chargement OpenStreetMap. Continuer ?',
+      'Ceci efface les noms, classifications (RC/RD/RN/privé) et formes de routes mémorisés — à cause d\'un bug de migration passé, elles sont toutes tombées en "Communale". Les routes déjà marquées "parcourues" gardent leur statut, elles seront juste re-nommées/reclassées au prochain chargement depuis la BD TOPO. Continuer ?',
       'Réinitialiser les routes'
     );
     if(!ok) return;
@@ -3485,7 +3485,7 @@
       // Pour chaque route déjà marquée parcourue, on garde juste ce statut
       // (et le nom personnalisé s'il y en a un) — on efface la forme et la
       // classification, qui seront reconstruites proprement au prochain
-      // chargement OpenStreetMap. Les routes jamais marquées parcourues sont
+      // chargement depuis la BD TOPO. Les routes jamais marquées parcourues sont
       // supprimées entièrement (rien d'utile à garder dessus).
       var kept = items
         .filter(function(it){ return it.covered === true; })
@@ -3501,7 +3501,7 @@
       handleAuthResponse(resp);
       if(!resp.ok) throw new Error('Erreur');
 
-      await customAlert('Routes réinitialisées (' + kept.length + ' route(s) parcourue(s) conservée(s)). La page va se recharger pour reprendre depuis OpenStreetMap.');
+      await customAlert('Routes réinitialisées (' + kept.length + ' route(s) parcourue(s) conservée(s)). La page va se recharger pour reprendre depuis la BD TOPO.');
       location.reload();
     } catch(e){
       await customAlert('Erreur lors de la réinitialisation.');
@@ -4692,7 +4692,7 @@
     }, function(){
       btn.disabled = false;
       btn.textContent = '↻ Recharger les routes';
-      alert('Toujours impossible de contacter OpenStreetMap. Réessayez dans quelques minutes.');
+      alert('Toujours impossible de contacter la BD TOPO (IGN). Réessayez dans quelques minutes.');
     });
   });
 
