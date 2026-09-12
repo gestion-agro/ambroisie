@@ -276,7 +276,13 @@
   // de regroupement — sans ça, une légère variation d'un tronçon à l'autre
   // (fréquente dans les données) faisait apparaître la même route sous
   // plusieurs entrées séparées, chacune avec seulement un morceau du tracé.
+  // Une route départementale/nationale (ref = D.../N...) est regroupée par
+  // SON NUMÉRO en priorité, pas par son nom — le nom local (ex: "Route de
+  // Vernoux") varie souvent d'un tronçon à l'autre le long d'une même RD,
+  // alors que le numéro (ex: D21) reste stable sur toute sa longueur. Sans
+  // ça, une même RD se retrouvait éclatée en plusieurs entrées distinctes.
   function roadKeyFor(tags, elId){
+    if(tags.ref && /^[DNA]\s?\d/i.test(tags.ref.trim())) return tags.ref.trim();
     if(tags.name) return tags.name.trim().replace(/\s+/g, ' ');
     if(tags.ref) return tags.ref.trim();
     return 'way' + elId;
