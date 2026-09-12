@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-m</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-o</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -1513,36 +1513,16 @@
     }, onFail, 15000);
   }
 
-  // Réduit la précision des coordonnées à 5 décimales (~1m, largement
-  // suffisant pour l'affichage) avant la mise en cache locale — le quota de
-  // stockage du navigateur (5-10 Mo selon les cas) est vite dépassé avec la
-  // géométrie complète de toutes les routes en pleine précision, maintenant
-  // que la zone couverte inclut aussi les couches complémentaires (voie
-  // ferrée, itinéraires...).
-  function roundCacheGeometry(node){
-    if(!node || typeof node !== 'object') return node;
-    if(typeof node.lat === 'number' && typeof node.lon === 'number'){
-      return { lat: Math.round(node.lat * 1e5) / 1e5, lon: Math.round(node.lon * 1e5) / 1e5 };
-    }
-    if(Array.isArray(node)) return node.map(roundCacheGeometry);
-    var out = {};
-    Object.keys(node).forEach(function(k){ out[k] = roundCacheGeometry(node[k]); });
-    return out;
-  }
-
+  // La mise en cache locale des routes (localStorage) a été désactivée :
+  // même réduite en précision, la géométrie de toutes les routes de la zone
+  // reste trop volumineuse pour le quota de stockage de certains navigateurs
+  // (variable selon les cas, parfois bien moins que les 5-10 Mo habituels).
+  // Elle n'apportait de toute façon plus grand-chose : la BD TOPO se charge
+  // maintenant de façon fiable et rapide (pagination), donc pas besoin de ce
+  // filet de secours local — l'appli re-télécharge simplement à chaque
+  // ouverture plutôt que d'avoir un affichage instantané depuis le cache.
   function saveCache(data, precision){
-    try{
-      var reduced = { elements: (data.elements || []).map(function(el){
-        return { type: el.type, id: el.id, tags: el.tags, geometry: roundCacheGeometry(el.geometry) };
-      }) };
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), precision: precision || 'bbox', data: reduced }));
-    } catch(e){
-      // Toujours pas de place même réduit (quota déjà bas dans ce
-      // navigateur, ou données vraiment volumineuses) : pas grave, l'appli
-      // fonctionne très bien sans ce cache local, elle re-téléchargera
-      // simplement à chaque fois plutôt que d'avoir un affichage instantané.
-      console.warn('Sauvegarde cache impossible (non bloquant)', e);
-    }
+    // Volontairement no-op — voir commentaire ci-dessus.
   }
 
   // ================= LIMITE COMMUNALE (contour + test dedans/dehors) =================
@@ -1773,6 +1753,9 @@
     // "Chemin rural" confirmé officiellement par la BD TOPO (statut légal
     // distinct, public) — pas la même chose qu'un chemin de terre détecté
     // seulement par sa géométrie, qui lui reste "à classifier" (PATH).
+    // Chemin confirmé communal par le Tableau de Classement Unique des
+    // Voies Communales (LA source légale, priorité absolue) -> communal.
+    if(tags.highway === 'chemin_officiel') return 'CHEMIN_COMMUNAL';
     if(tags.highway === 'chemin_rural') return 'CHEMIN_RURAL';
     // Chemins de terre / d'exploitation, chemins équestres, souvent en terrain
     // privé, non praticables ou peu praticables en voiture, et hors ressort de
