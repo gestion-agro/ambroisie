@@ -279,10 +279,29 @@
   // de regroupement — sans ça, une légère variation d'un tronçon à l'autre
   // (fréquente dans les données) faisait apparaître la même route sous
   // plusieurs entrées séparées, chacune avec seulement un morceau du tracé.
+  // Une route départementale/nationale (ref = D.../N...) est regroupée par
+  // SON NUMÉRO en priorité, pas par son nom — le nom local (ex: "Route de
+  // Vernoux") varie souvent d'un tronçon à l'autre le long d'une même RD,
+  // alors que le numéro (ex: D21) reste stable sur toute sa longueur. Sans
+  // ça, une même RD se retrouvait éclatée en plusieurs entrées distinctes.
   function roadKeyFor(tags, elId){
+    if(tags.ref && /^[DNA]\s?\d/i.test(tags.ref.trim())) return tags.ref.trim();
     if(tags.name) return tags.name.trim().replace(/\s+/g, ' ');
     if(tags.ref) return tags.ref.trim();
     return 'way' + elId;
+  }
+  // Étiquette affichée : pour une RD/RN, toujours SON NUMÉRO ("D 21"), jamais
+  // le nom d'un tronçon particulier — une même départementale porte souvent
+  // plusieurs noms locaux différents sur sa longueur (ex: "Route de Vernoux"
+  // d'un côté, "Route de Saint-Agrève" de l'autre), et afficher le nom du
+  // premier tronçon rencontré au hasard créait une étiquette trompeuse, qui
+  // ne correspondait à aucune des vraies appellations sur le terrain.
+  function roadLabelFor(tags){
+    if(tags.ref && /^[DNA]\s?\d/i.test(tags.ref.trim())){
+      var m = tags.ref.trim().toUpperCase().match(/^([DNA])\s?(\d+.*)$/);
+      return m ? (m[1] + ' ' + m[2]) : tags.ref.trim();
+    }
+    return null; // pas une RD/RN : le nom normal reste utilisé ailleurs
   }
   function legacyKeySuffix(key){ return key.replace(/^(RC|RD|RN|PATH)::/, ''); }
 
@@ -337,7 +356,7 @@
       if(!grouped[key]){
         grouped[key] = {
           roadClass: classifyRoad(tags),
-          label: tags.name ? tags.name : ('Voie sans nom (' + (tags.highway || '?') + ')'),
+          label: roadLabelFor(tags) || (tags.name ? tags.name : ('Voie sans nom (' + (tags.highway || '?') + ')')),
           rawLines: [],
           confident: tags.confident === '1'
         };
