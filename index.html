@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-s</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-t</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -751,6 +751,7 @@
     <button class="btn primary" id="btnFinishDrawRoad" style="flex:1;" disabled>Terminer</button>
   </div>
   <button class="btn" id="btnNewSegment" style="width:100%;">➕ Nouveau morceau (route interrompue)</button>
+  <button class="btn" id="btnDeleteSegment" style="width:100%;margin-top:6px;color:#a1352b;border-color:#a1352b;">🗑️ Supprimer le morceau sélectionné</button>
 </div>
 
 <div id="controls">
@@ -1197,7 +1198,7 @@
     redrawEditLines();
     document.getElementById('drawRoadBanner').classList.remove('hidden');
     document.getElementById('drawRoadTitle').textContent = editSegments.length > 1
-      ? '✏️ Route en ' + editSegments.length + ' morceaux — glissez un point, touchez la carte pour prolonger le dernier morceau touché'
+      ? '✏️ Route en ' + editSegments.length + ' morceaux — touchez un morceau (pointillés) pour le sélectionner, glissez un point pour l\'ajuster, touchez la carte pour prolonger le morceau sélectionné'
       : '✏️ Glissez un point pour l\'ajuster, touchez la carte pour prolonger';
     document.getElementById('btnFinishDrawRoad').textContent = 'Enregistrer les modifications';
     updateDrawRoadUI();
@@ -1206,15 +1207,25 @@
   function resetEditLayers(){
     editMarkers.clearLayers();
     editMarkers.addTo(map);
-    editLines.forEach(function(l){ map.removeLayer(l); });
+    editLines.forEach(function(l){ if(l) map.removeLayer(l); });
     editLines = [];
   }
 
   function redrawEditLines(){
-    editLines.forEach(function(l){ map.removeLayer(l); });
+    editLines.forEach(function(l){ if(l) map.removeLayer(l); });
     editLines = editSegments.map(function(seg, idx){
       if(seg.length < 2) return null;
-      return L.polyline(seg, { color:'#e6007e', weight:5, dashArray: idx === activeSegmentIndex ? '6 6' : null, opacity: idx === activeSegmentIndex ? 1 : 0.6 }).addTo(map);
+      var line = L.polyline(seg, { color:'#e6007e', weight:5, dashArray: idx === activeSegmentIndex ? '6 6' : null, opacity: idx === activeSegmentIndex ? 1 : 0.6 }).addTo(map);
+      // Toucher un morceau déjà tracé le rend actif : les points suivants
+      // s'ajouteront à CE morceau plutôt qu'au dernier touché par défaut —
+      // indispensable pour reprendre/prolonger un morceau précis parmi
+      // plusieurs, ou pour le supprimer entièrement ensuite.
+      line.on('click', function(e){
+        activeSegmentIndex = idx;
+        redrawEditLines();
+        L.DomEvent.stopPropagation(e);
+      });
+      return line;
     });
   }
 
@@ -1255,7 +1266,7 @@
     editSegments = [];
     editMarkers.clearLayers();
     map.removeLayer(editMarkers);
-    editLines.forEach(function(l){ map.removeLayer(l); });
+    editLines.forEach(function(l){ if(l) map.removeLayer(l); });
     editLines = [];
     document.getElementById('drawRoadBanner').classList.add('hidden');
   }
@@ -1288,6 +1299,35 @@
   function startNewSegment(){
     editSegments.push([]);
     activeSegmentIndex = editSegments.length - 1;
+    redrawEditLines();
+    updateDrawRoadUI();
+  }
+
+  // Supprime entièrement le morceau actif (pas juste son dernier point) —
+  // pour retirer un morceau ajouté par erreur, ou en refaire un complètement.
+  // Sélectionnez d'abord le morceau à supprimer en touchant son tracé.
+  async function deleteActiveSegment(){
+    if(editSegments.length <= 1){
+      await customAlert('Impossible de supprimer le seul morceau restant — utilisez "Annuler" pour tout abandonner à la place.');
+      return;
+    }
+    var ok = await showModal({
+      title: 'Supprimer ce morceau ?',
+      message: 'Le morceau actuellement en évidence (pointillés) sera entièrement retiré. Les autres morceaux de la route ne sont pas affectés.',
+      buttons: [
+        { label: 'Annuler', value: null },
+        { label: 'Supprimer', value: true, danger: true }
+      ]
+    });
+    if(!ok) return;
+    editSegments.splice(activeSegmentIndex, 1);
+    activeSegmentIndex = Math.max(0, activeSegmentIndex - 1);
+    // Reconstruit tous les marqueurs (leurs index de morceau ont changé après
+    // la suppression) plutôt que d'essayer de les ajuster un par un.
+    editMarkers.clearLayers();
+    editSegments.forEach(function(seg, segIdx){
+      seg.forEach(function(p, ptIdx){ addDraggableMarker(p, segIdx, ptIdx); });
+    });
     redrawEditLines();
     updateDrawRoadUI();
   }
@@ -3016,6 +3056,7 @@
   document.getElementById('btnFinishDrawRoad').addEventListener('click', finishDrawRoad);
   document.getElementById('btnRemoveLastPoint').addEventListener('click', removeLastDrawingPoint);
   document.getElementById('btnNewSegment').addEventListener('click', startNewSegment);
+  document.getElementById('btnDeleteSegment').addEventListener('click', deleteActiveSegment);
 
   document.getElementById('btnBackfillRefNumbers').addEventListener('click', async function(){
     var missing = signalements.filter(function(s){ return !s.refNumber; });
