@@ -443,7 +443,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-u</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-w</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -494,6 +494,10 @@
       <span style="font-size:11px;">Session en cours</span>
     </div>
     <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
+    <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;">
+      <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkHeatmap" style="margin:0;"> <span class="sw" style="background:radial-gradient(circle, #c0392b, #f4d03f, transparent);border-radius:50%;width:12px;height:12px;"></span> <span style="flex:1;">🔥 Zones à cibler (historique)</span></label></div>
+      <div id="archiveYearsContainer" style="margin-top:4px;"></div>
+    </div>
   </div>
 </div>
 
@@ -682,6 +686,11 @@
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Efface les noms/classifications mémorisés (suite à un bug de migration) et force un rechargement propre depuis la BD TOPO. Les routes déjà marquées "parcourues" restent parcourues.</p>
         <button class="btn" id="btnResetRoadClassification" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Réinitialiser les routes</button>
       </div>
+      <div style="margin-top:16px;border-top:2px solid #ddd;padding-top:14px;">
+        <h3 style="font-size:14px;color:var(--danger);">🗓️ Clôturer la saison</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Archive tous les signalements actuels sous l'année en cours (consultables ensuite dans la légende, année par année), puis vide la liste active pour repartir à zéro la saison prochaine. À faire uniquement en fin de campagne.</p>
+        <button class="btn" id="btnCloseSeason" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Clôturer la saison</button>
+      </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
     <button class="btn" id="btnLogout" style="width:100%;margin-top:16px;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Déconnexion</button>
@@ -769,6 +778,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js" crossorigin="anonymous"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
@@ -858,6 +868,7 @@
   var userMarker = null;
   var accuracyCircle = null;
   var following = false; // le suivi (enregistrement + centrage) doit être activé manuellement par le conseiller
+  var mapFollowingMe = false; // suivi continu de la carte sur la position, distinct de l'enregistrement du trajet (bouton ◎)
   var lastFix = null;
 
   // ---- Tracé en segments ----
@@ -2297,6 +2308,14 @@
         map.setView(COMMUNE_CENTER, 13, { animate:true });
       }
     }
+
+    // Suivi continu de la carte sur la position (bouton ◎ activé) —
+    // indépendant de l'enregistrement du trajet ci-dessus : recentre à
+    // chaque nouvelle position tant que l'utilisateur n'a pas désactivé le
+    // suivi (second clic sur ◎, ou déplacement manuel de la carte).
+    if(mapFollowingMe && !following && MAP_BOUNDS.contains([lat, lon])){
+      map.setView([lat, lon], map.getZoom(), { animate:true });
+    }
   }
 
   var ACCURACY_WARNING_THRESHOLD = 300; // mètres
@@ -2338,15 +2357,38 @@
   }
 
   // ---- Controls ----
-  document.getElementById('btnCenter').addEventListener('click', function(){
+  var btnCenterEl = document.getElementById('btnCenter');
+  function updateCenterBtn(){
+    btnCenterEl.classList.toggle('primary', mapFollowingMe);
+    btnCenterEl.title = mapFollowingMe ? 'Arrêter de suivre ma position' : 'Centrer sur ma position (et suivre en continu)';
+  }
+  btnCenterEl.addEventListener('click', function(){
+    if(mapFollowingMe){
+      // Deuxième clic : arrête le suivi continu, reste où on en est.
+      mapFollowingMe = false;
+      updateCenterBtn();
+      return;
+    }
     if(lastFix && MAP_BOUNDS.contains(lastFix)){
       map.setView(lastFix, 17, { animate:true });
-      // Recentrage ponctuel uniquement : n'active plus le suivi continu du
-      // trajet (désactivé pour l'instant), juste un recentrage immédiat.
+      mapFollowingMe = true;
+      updateCenterBtn();
     } else if(roadBounds){
       map.fitBounds(roadBounds, { padding:[30,30] });
     } else {
       map.setView(COMMUNE_CENTER, 13, { animate:true });
+    }
+  });
+  // Un déplacement manuel de la carte (glisser) désactive le suivi continu —
+  // sinon la carte "revient" toute seule à chaque position GPS, ce qui
+  // empêche de consulter tranquillement une autre zone pendant le suivi.
+  // Uniquement sur un vrai geste utilisateur (dragstart), pas sur les
+  // recentrages programmés par le suivi lui-même (qui ne déclenchent pas cet
+  // événement).
+  map.on('dragstart', function(){
+    if(mapFollowingMe){
+      mapFollowingMe = false;
+      updateCenterBtn();
     }
   });
 
@@ -3074,6 +3116,7 @@
     startSignalSync();
     startCitizenSync();
     loadRoadCoverage();
+    loadArchiveIndex();
     restorePreferences();
   }
 
@@ -3547,6 +3590,7 @@
     }
   });
 
+  document.getElementById('btnCloseSeason').addEventListener('click', closeSeason);
   document.getElementById('btnResetRoadClassification').addEventListener('click', async function(){
     var ok = await customConfirm(
       'Ceci efface les noms, classifications (RC/RD/RN/privé) et formes de routes mémorisés — à cause d\'un bug de migration passé, elles sont toutes tombées en "Communale". Les routes déjà marquées "parcourues" gardent leur statut, elles seront juste re-nommées/reclassées au prochain chargement depuis la BD TOPO. Continuer ?',
@@ -3776,6 +3820,81 @@
     });
   }
 
+  // ================= FIN DE SAISON : ARCHIVAGE =================
+  // Une fois la saison close, les signalements de l'année sont mémorisés à
+  // part (archive-AAAA.json), consultables ensuite via la légende, et le
+  // fichier actif (signalements.json) repart à zéro pour la saison suivante.
+
+  function archiveUrl(year){ return CONFIG.WORKER_URL.replace('/signalements', '/archive') + '?year=' + year; }
+  function archiveIndexUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/archive-index'); }
+
+  async function closeSeason(){
+    if(currentRole !== 'admin') return;
+    var year = new Date().getFullYear();
+    var yearChoice = prompt('Année de la saison à clôturer :', String(year));
+    if(yearChoice === null) return;
+    year = parseInt(yearChoice, 10);
+    if(!year || year < 2020 || year > 2100){ await customAlert('Année invalide.'); return; }
+
+    var confirmed = await showModal({
+      title: 'Clôturer la saison ' + year + ' ?',
+      message: signalements.length + ' signalement(s) actuel(s) seront archivés sous "' + year + '", puis la liste active sera vidée pour repartir à zéro. Cette action est réversible en cas d\'erreur (les données archivées restent consultables), mais à faire uniquement en fin de saison.',
+      buttons: [
+        { label: 'Annuler', value: null },
+        { label: 'Clôturer la saison ' + year, value: true, danger: true }
+      ]
+    });
+    if(!confirmed) return;
+
+    showSync('Archivage en cours…');
+    try{
+      // 1) Récupère l'archive existante pour cette année, s'il y en a déjà une
+      //    (au cas où la clôture serait relancée par erreur) — pour ne rien
+      //    écraser silencieusement, on fusionne plutôt que remplacer.
+      var getResp = await fetch(archiveUrl(year), { headers: authHeaders() });
+      if(!getResp.ok) throw new Error('HTTP ' + getResp.status + ' (lecture archive existante)');
+      var existing = await getResp.json();
+      var existingIds = {};
+      (existing.items || []).forEach(function(it){ existingIds[it.id] = true; });
+      var merged = (existing.items || []).concat(signalements.filter(function(s){ return !existingIds[s.id]; }));
+
+      // 2) Enregistre l'archive fusionnée
+      var putResp = await fetch(archiveUrl(year), {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: merged, sha: existing.sha || null })
+      });
+      if(!putResp.ok) throw new Error('HTTP ' + putResp.status + ' (écriture archive)');
+
+      // 3) Met à jour l'index des années archivées
+      var idxResp = await fetch(archiveIndexUrl(), { headers: authHeaders() });
+      if(!idxResp.ok) throw new Error('HTTP ' + idxResp.status + ' (lecture index)');
+      var idxData = await idxResp.json();
+      var years = (idxData.items || []).filter(function(y){ return y !== year; });
+      years.push(year);
+      years.sort();
+      var idxPut = await fetch(archiveIndexUrl(), {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: years, sha: idxData.sha || null })
+      });
+      if(!idxPut.ok) throw new Error('HTTP ' + idxPut.status + ' (écriture index)');
+
+      // 4) Vide la liste active — la saison suivante repart de zéro.
+      signalements = [];
+      await saveSignalements();
+
+      hideSync();
+      await customAlert('Saison ' + year + ' archivée (' + merged.length + ' signalement(s) au total pour cette année). La liste active est maintenant vide.');
+      renderSignalMarkers();
+      renderList();
+      loadArchiveIndex(); // rafraîchit la liste des années disponibles (nouvelle année ajoutée)
+    } catch(err){
+      hideSync();
+      await customAlert('Erreur lors de l\'archivage : ' + String(err.message || err) + '. Rien n\'a été perdu, réessayez.');
+    }
+  }
+
   // ================= MARQUEURS DE SIGNALEMENT =================
   var signalMarkersLayer = L.layerGroup();
   var pendingReportCoords = null;
@@ -3796,6 +3915,146 @@
   function getTraite(s){ return s.traite !== undefined ? s.traite : (s.status === 'traite'); }
   function getErreur(s){ return s.isErreur !== undefined ? s.isErreur : (s.status === 'erreur'); }
   function getSentToDept(s){ return s.sentToDept === true; }
+
+  // ================= HISTORIQUE DES SAISONS (archives) =================
+  // Chaque année archivée a son propre calque par type de classification,
+  // affiché uniquement si coché dans la légende — chargé à la demande (pas
+  // au démarrage) pour ne pas ralentir l'ouverture de l'appli.
+  var archiveYears = []; // liste des années disponibles, ex: [2024, 2025]
+  var archiveDataByYear = {}; // année -> liste de signalements (chargé à la demande)
+  var archiveLayersByYear = {}; // année -> { classification -> L.layerGroup }
+
+  function archiveMarkerColor(cls){
+    return (CLASSIFICATIONS[cls] && CLASSIFICATIONS[cls].color) || '#666';
+  }
+
+  async function loadArchiveIndex(){
+    try{
+      var r = await fetch(archiveIndexUrl(), { headers: authHeaders() });
+      if(!r.ok) return;
+      var data = await r.json();
+      archiveYears = (data.items || []).slice().sort(function(a,b){ return b - a; }); // plus récent d'abord
+      renderArchiveYearsUI();
+    } catch(e){ console.warn('Index des archives indisponible', e); }
+  }
+
+  function renderArchiveYearsUI(){
+    var box = document.getElementById('archiveYearsContainer');
+    if(!archiveYears.length){ box.innerHTML = ''; return; }
+    box.innerHTML = archiveYears.map(function(year){
+      var typesHtml = Object.keys(CLASSIFICATIONS).map(function(cls){
+        return '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;padding-left:18px;font-size:11px;">' +
+          '<input type="checkbox" data-archive-year="' + year + '" data-archive-cls="' + cls + '" style="margin:0;"> ' +
+          '<span class="sw" style="background:' + archiveMarkerColor(cls) + ';border-radius:50%;width:8px;height:8px;"></span> ' +
+          '<span style="flex:1;">' + CLASSIFICATIONS[cls].label + '</span>' +
+          '</label>';
+      }).join('');
+      return '<div style="margin-top:2px;">' +
+        '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;" data-archive-year-toggle="' + year + '">' +
+        '<span data-archive-year-icon="' + year + '">▸</span> 📅 ' + year +
+        '</div>' +
+        '<div data-archive-year-body="' + year + '" class="hidden">' + typesHtml + '</div>' +
+        '</div>';
+    }).join('');
+
+    // Ouvre/ferme la liste des types pour une année au clic sur son titre.
+    box.querySelectorAll('[data-archive-year-toggle]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var year = el.getAttribute('data-archive-year-toggle');
+        var body = box.querySelector('[data-archive-year-body="' + year + '"]');
+        var icon = box.querySelector('[data-archive-year-icon="' + year + '"]');
+        var isHidden = body.classList.toggle('hidden');
+        icon.textContent = isHidden ? '▸' : '▾';
+      });
+    });
+    // Coche/décoche un type précis pour une année : charge les données à la
+    // demande (une seule fois par année), puis affiche/masque son calque.
+    box.querySelectorAll('input[data-archive-year]').forEach(function(el){
+      el.addEventListener('change', async function(){
+        var year = parseInt(el.getAttribute('data-archive-year'), 10);
+        var cls = el.getAttribute('data-archive-cls');
+        await ensureArchiveYearLoaded(year);
+        var layer = archiveLayersByYear[year][cls];
+        if(el.checked) map.addLayer(layer); else map.removeLayer(layer);
+      });
+    });
+  }
+
+  async function ensureArchiveYearLoaded(year){
+    if(archiveDataByYear[year]) return; // déjà chargée
+    var r = await fetch(archiveUrl(year), { headers: authHeaders() });
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    var data = await r.json();
+    var items = data.items || [];
+    archiveDataByYear[year] = items;
+
+    var layers = {};
+    Object.keys(CLASSIFICATIONS).forEach(function(cls){ layers[cls] = L.layerGroup(); });
+    items.forEach(function(s){
+      var cls = getClassification(s);
+      if(!layers[cls] || typeof s.lat !== 'number' || typeof s.lon !== 'number') return;
+      var color = archiveMarkerColor(cls);
+      var marker = L.circleMarker([s.lat, s.lon], {
+        radius: 6, color: color, fillColor: color, fillOpacity: 0.55, weight: 2, opacity: 0.85
+      });
+      var qty = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : 'quantité non renseignée';
+      marker.bindPopup('<b>' + (s.name || 'Signalement') + '</b><br>' + (s.date || '') + '<br>' + qty);
+      marker.addTo(layers[cls]);
+    });
+    archiveLayersByYear[year] = layers;
+  }
+
+  // ================= CALQUE "ZONES À CIBLER" (dégradé de densité) =================
+  // Basé UNIQUEMENT sur les signalements confirmés (ni doublon, ni "pas
+  // d'ambroisie", ni marqués erreur) — actuels ET de toutes les années
+  // archivées déjà consultées, pondérés par le nombre de plants estimé, pour
+  // repérer d'un coup d'œil les secteurs les plus touchés et cibler en
+  // priorité la prochaine campagne.
+  var heatLayer = null;
+  var QTY_WEIGHT = { '<10': 0.3, '10-50': 0.6, '50-500': 0.85, '>500': 1 };
+
+  function isConfirmedSignalement(s){
+    var cls = getClassification(s);
+    return (cls === 'valide' || cls === 'en_cours' || cls === 'departement') && !getErreur(s);
+  }
+
+  async function buildHeatLayer(){
+    // Regroupe les signalements confirmés actuels + de toutes les années
+    // archivées (chargées à la demande si pas déjà en mémoire).
+    var allYears = archiveYears.slice();
+    for(var i = 0; i < allYears.length; i++){
+      try{ await ensureArchiveYearLoaded(allYears[i]); } catch(e){ /* une année indisponible n'empêche pas les autres */ }
+    }
+    var points = [];
+    signalements.filter(isConfirmedSignalement).forEach(function(s){
+      if(typeof s.lat === 'number' && typeof s.lon === 'number'){
+        points.push([s.lat, s.lon, QTY_WEIGHT[s.quantity] || 0.4]);
+      }
+    });
+    allYears.forEach(function(year){
+      (archiveDataByYear[year] || []).filter(isConfirmedSignalement).forEach(function(s){
+        if(typeof s.lat === 'number' && typeof s.lon === 'number'){
+          points.push([s.lat, s.lon, QTY_WEIGHT[s.quantity] || 0.4]);
+        }
+      });
+    });
+    if(heatLayer) map.removeLayer(heatLayer);
+    heatLayer = L.heatLayer(points, { radius: 35, blur: 25, maxZoom: 17, minOpacity: 0.35 });
+    return heatLayer;
+  }
+
+  document.getElementById('chkHeatmap').addEventListener('change', async function(e){
+    if(e.target.checked){
+      e.target.disabled = true;
+      try{
+        var layer = await buildHeatLayer();
+        map.addLayer(layer);
+      } catch(err){ console.warn('Erreur construction du calque de densité', err); }
+      e.target.disabled = false;
+    } else if(heatLayer){
+      map.removeLayer(heatLayer);
+    }
+  });
 
   // Couleur du marqueur sur la carte : logique dédiée au terrain, distincte des
   // étiquettes de la liste. Priorité à l'info la plus utile pour un conseiller
