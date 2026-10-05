@@ -105,6 +105,9 @@
   /* ---- legend ---- */
   #legend{
     position:fixed;right:12px;top:72px;z-index:1000;
+    width:min(270px, calc(100vw - 24px));
+    max-height:calc(100vh - 160px);
+    overflow-y:auto;
     background:var(--panel);
     border:2px solid var(--ink);
     border-radius:10px;
@@ -113,12 +116,14 @@
     line-height:1.9;
     color:var(--ink);
     box-shadow:2px 2px 0 rgba(0,0,0,.15);
+    box-sizing:border-box;
   }
   #legend div{display:flex;align-items:center;gap:6px;}
   #legend .sw{width:16px;height:3px;border-radius:2px;flex:none;}
   #legend #legendBody{display:block;}
   #legendBody > div{display:flex;align-items:center;gap:6px;}
   #legend #legendBody.collapsed{display:none;}
+  [data-folder-body].hidden{display:none;}
 
   /* ---- loading overlay ---- */
   #loading{
@@ -443,7 +448,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-x</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-y</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -468,35 +473,53 @@
     <span id="legendToggleIcon" style="font-size:12px;">▸</span>
   </div>
   <div id="legendBody" class="collapsed">
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
-    <div style="padding-left:22px;"><span class="sw" style="border-top:2px dashed #2f6b3a;background:none;"></span> ↳ parcourue</div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRN" style="margin:0;"> <span class="sw" style="background:#8a3fbf"></span> Nationale (RN)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsPath" style="margin:0;"> <span class="sw" style="background:#a8a8a8"></span> Chemins à classifier (indicatif)</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminRural" style="margin:0;"> <span class="sw" style="background:#8a6d3b"></span> Chemins ruraux</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminCommunal" style="margin:0;"> <span class="sw" style="background:#2f9e8f"></span> Chemins communaux</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminPrive" style="margin:0;"> <span class="sw" style="background:#a1352b"></span> Chemins privés</label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkCadastre" style="margin:0;"> <span class="sw" style="border:2px solid #444;background:none;width:12px;height:12px;"></span> Cadastre (parcelles)</label></div>
-    <div id="chkUnnamedRoadsRow" class="hidden"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkUnnamedRoads" style="margin:0;"> <span class="sw" style="background:#1c6fd9"></span> Routes sans nom (admin)</label></div>
-    <div><span class="sw" style="background:var(--line-done)"></span> Mon trajet</div>
-    <div><span class="sw" style="background:#1c6fd9;border-top:2px dashed #1c6fd9;background:none"></span> Autres conseillers</div>
-    <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
-    <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><b style="font-size:11px;">Signalements :</b></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigATraiter" checked style="margin:0;"> <span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">À traiter</span> <span id="cntATraiter" style="font-weight:700;">0</span></label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigTraite" style="margin:0;"> <span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Traité</span> <span id="cntTraite" style="font-weight:700;">0</span></label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDoublon" style="margin:0;"> <span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Doublon</span> <span id="cntDoublon" style="font-weight:700;">0</span></label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigPasAmbroisie" style="margin:0;"> <span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Pas d'ambroisie</span> <span id="cntPasAmbroisie" style="font-weight:700;">0</span></label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptNonEnvoye" checked style="margin:0;"> <span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (pas envoyé)</span> <span id="cntDeptNonEnvoye" style="font-weight:700;">0</span></label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (envoyé)</span> <span id="cntDeptEnvoye" style="font-weight:700;">0</span></label></div>
-    <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Citoyen (en attente)</span> <span id="cntCitoyen" style="font-weight:700;">0</span></label></div>
-    <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;">
-      <span class="sw" style="background:repeating-linear-gradient(45deg, #2f6b3a, #2f6b3a 2px, transparent 2px, transparent 4px);border:2px solid #2f6b3a;border-radius:50%;width:10px;height:10px;flex:none;"></span>
-      <span style="font-size:11px;">Session en cours</span>
+
+    <div class="legend-folder">
+      <div class="legend-folder-header" data-folder-toggle="routes" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;padding:4px 0;">
+        <span data-folder-icon="routes">▸</span> 📁 Routes
+      </div>
+      <div data-folder-body="routes" class="hidden" style="padding-left:6px;">
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRC" checked style="margin:0;"> <span class="sw" style="background:#2f6b3a"></span> Communale (RC)</label></div>
+        <div style="padding-left:22px;"><span class="sw" style="border-top:2px dashed #2f6b3a;background:none;"></span> ↳ parcourue</div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsRD" style="margin:0;"> <span class="sw" style="background:#c9781f"></span> Départementale (RD)</label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminRural" style="margin:0;"> <span class="sw" style="background:#8a6d3b"></span> Chemins ruraux</label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkRoadsCheminCommunal" style="margin:0;"> <span class="sw" style="background:#2f9e8f"></span> Chemins communaux</label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkCadastre" style="margin:0;"> <span class="sw" style="border:2px solid #444;background:none;width:12px;height:12px;"></span> Cadastre (parcelles)</label></div>
+        <div id="chkUnnamedRoadsRow" class="hidden"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chkUnnamedRoads" style="margin:0;"> <span class="sw" style="background:#1c6fd9"></span> Routes sans nom (admin)</label></div>
+        <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
+      </div>
     </div>
-    <div style="margin-top:4px;"><button id="btnReloadRoads" style="font-size:10px;padding:4px 8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);cursor:pointer;">↻ Recharger les routes</button></div>
-    <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;">
-      <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkHeatmap" style="margin:0;"> <span class="sw" style="background:radial-gradient(circle, #c0392b, #f4d03f, transparent);border-radius:50%;width:12px;height:12px;"></span> <span style="flex:1;">🔥 Zones à cibler (historique)</span></label></div>
-      <div id="archiveYearsContainer" style="margin-top:4px;"></div>
+
+    <div><span class="sw" style="background:#1a1a1a;border-top:2px dashed #1a1a1a;background:none"></span> Limite communale</div>
+
+    <div class="legend-folder" style="margin-top:6px;">
+      <div class="legend-folder-header" data-folder-toggle="signalements" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;padding:4px 0;">
+        <span data-folder-icon="signalements">▸</span> 📁 Signalements
+      </div>
+      <div data-folder-body="signalements" class="hidden" style="padding-left:6px;">
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigATraiter" checked style="margin:0;"> <span class="sw" style="background:#c0392b;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">À traiter</span> <span id="cntATraiter" style="font-weight:700;">0</span></label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigTraite" style="margin:0;"> <span class="sw" style="background:#2f6b3a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Traité</span> <span id="cntTraite" style="font-weight:700;">0</span></label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDoublon" style="margin:0;"> <span class="sw" style="background:#2f6bd6;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Doublon</span> <span id="cntDoublon" style="font-weight:700;">0</span></label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigPasAmbroisie" style="margin:0;"> <span class="sw" style="background:#8a8a8a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Pas d'ambroisie</span> <span id="cntPasAmbroisie" style="font-weight:700;">0</span></label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptNonEnvoye" checked style="margin:0;"> <span class="sw" style="background:#b5651d;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (pas envoyé)</span> <span id="cntDeptNonEnvoye" style="font-weight:700;">0</span></label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigDeptEnvoye" style="margin:0;"> <span class="sw" style="background:#6b7280;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Département (envoyé)</span> <span id="cntDeptEnvoye" style="font-weight:700;">0</span></label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkSigCitoyen" checked style="margin:0;"> <span class="sw" style="background:#c9268a;border-radius:50%;width:10px;height:10px;"></span> <span style="flex:1;">Citoyen (en attente)</span> <span id="cntCitoyen" style="font-weight:700;">0</span></label></div>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;">
+          <span class="sw" style="background:repeating-linear-gradient(45deg, #2f6b3a, #2f6b3a 2px, transparent 2px, transparent 4px);border:2px solid #2f6b3a;border-radius:50%;width:10px;height:10px;flex:none;"></span>
+          <span style="font-size:11px;">Session en cours</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:6px;"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkHeatmap" style="margin:0;"> <span class="sw" style="background:radial-gradient(circle, #c0392b, #f4d03f, transparent);border-radius:50%;width:12px;height:12px;"></span> <span style="flex:1;">🔥 Zones à cibler (historique)</span></label></div>
+
+    <div class="legend-folder" style="margin-top:6px;">
+      <div class="legend-folder-header" data-folder-toggle="archive" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;padding:4px 0;">
+        <span data-folder-icon="archive">▸</span> 📁 Archive
+      </div>
+      <div data-folder-body="archive" class="hidden" style="padding-left:6px;">
+        <div id="archiveYearsContainer">Aucune saison archivée pour l'instant.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -3075,7 +3098,7 @@
   // Mémorise les calques/filtres activés ou désactivés, pour les retrouver
   // tels quels à la prochaine connexion — évite de tout recocher à chaque fois.
   var PREF_CHECKBOXES = [
-    'chkRoadsRC','chkRoadsRD','chkRoadsRN','chkRoadsPath','chkRoadsCheminRural','chkRoadsCheminCommunal','chkRoadsCheminPrive','chkCadastre',
+    'chkRoadsRC','chkRoadsRD','chkRoadsCheminRural','chkRoadsCheminCommunal','chkCadastre',
     'chkSigATraiter','chkSigTraite','chkSigDoublon','chkSigPasAmbroisie',
     'chkSigDeptNonEnvoye','chkSigDeptEnvoye','chkSigCitoyen'
   ];
@@ -3923,9 +3946,19 @@
   var archiveDataByYear = {}; // année -> liste de signalements (chargé à la demande)
   var archiveLayersByYear = {}; // année -> { classification -> L.layerGroup }
 
-  function archiveMarkerColor(cls){
-    return (CLASSIFICATIONS[cls] && CLASSIFICATIONS[cls].color) || '#666';
-  }
+  // Mêmes catégories, mêmes couleurs, que celles déjà utilisées pour les
+  // signalements en cours (voir signalCategoryFor) — pour une cohérence
+  // visuelle totale entre "en cours" et "archivé". "citoyen" n'a pas de sens
+  // ici (un signalement archivé est forcément déjà traité d'une manière ou
+  // d'une autre, plus "en attente").
+  var ARCHIVE_CATS = {
+    a_traiter:      { label: 'À traiter',                color: '#c0392b' },
+    traite:         { label: 'Traité',                   color: '#2f6b3a' },
+    doublon:        { label: 'Doublon',                  color: '#2f6bd6' },
+    pas_ambroisie:  { label: "Pas d'ambroisie",           color: '#8a8a8a' },
+    dept_non_envoye:{ label: 'Département (pas envoyé)', color: '#b5651d' },
+    dept_envoye:    { label: 'Département (envoyé)',     color: '#6b7280' }
+  };
 
   async function loadArchiveIndex(){
     try{
@@ -3939,41 +3972,38 @@
 
   function renderArchiveYearsUI(){
     var box = document.getElementById('archiveYearsContainer');
-    if(!archiveYears.length){ box.innerHTML = ''; return; }
+    if(!archiveYears.length){
+      box.innerHTML = "Aucune saison archivée pour l'instant.";
+      return;
+    }
     box.innerHTML = archiveYears.map(function(year){
-      var typesHtml = Object.keys(CLASSIFICATIONS).map(function(cls){
+      var typesHtml = Object.keys(ARCHIVE_CATS).map(function(cat){
         return '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;padding-left:18px;font-size:11px;">' +
-          '<input type="checkbox" data-archive-year="' + year + '" data-archive-cls="' + cls + '" style="margin:0;"> ' +
-          '<span class="sw" style="background:' + archiveMarkerColor(cls) + ';border-radius:50%;width:8px;height:8px;"></span> ' +
-          '<span style="flex:1;">' + CLASSIFICATIONS[cls].label + '</span>' +
+          '<input type="checkbox" data-archive-year="' + year + '" data-archive-cat="' + cat + '" style="margin:0;"> ' +
+          '<span class="sw" style="background:' + ARCHIVE_CATS[cat].color + ';border-radius:50%;width:8px;height:8px;"></span> ' +
+          '<span style="flex:1;">' + ARCHIVE_CATS[cat].label + '</span>' +
           '</label>';
       }).join('');
       return '<div style="margin-top:2px;">' +
-        '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;" data-archive-year-toggle="' + year + '">' +
-        '<span data-archive-year-icon="' + year + '">▸</span> 📅 ' + year +
+        '<div class="legend-folder-header" data-folder-toggle="archiveyear' + year + '" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;">' +
+        '<span data-folder-icon="archiveyear' + year + '">▸</span> 📅 ' + year +
         '</div>' +
-        '<div data-archive-year-body="' + year + '" class="hidden">' + typesHtml + '</div>' +
+        '<div data-folder-body="archiveyear' + year + '" class="hidden">' + typesHtml + '</div>' +
         '</div>';
     }).join('');
 
-    // Ouvre/ferme la liste des types pour une année au clic sur son titre.
-    box.querySelectorAll('[data-archive-year-toggle]').forEach(function(el){
-      el.addEventListener('click', function(){
-        var year = el.getAttribute('data-archive-year-toggle');
-        var body = box.querySelector('[data-archive-year-body="' + year + '"]');
-        var icon = box.querySelector('[data-archive-year-icon="' + year + '"]');
-        var isHidden = body.classList.toggle('hidden');
-        icon.textContent = isHidden ? '▸' : '▾';
-      });
-    });
+    // Les dossiers par année, créés dynamiquement, doivent être câblés avec
+    // le même mécanisme générique que Routes/Signalements/Archive.
+    initLegendFolderToggles(box);
+
     // Coche/décoche un type précis pour une année : charge les données à la
     // demande (une seule fois par année), puis affiche/masque son calque.
     box.querySelectorAll('input[data-archive-year]').forEach(function(el){
       el.addEventListener('change', async function(){
         var year = parseInt(el.getAttribute('data-archive-year'), 10);
-        var cls = el.getAttribute('data-archive-cls');
+        var cat = el.getAttribute('data-archive-cat');
         await ensureArchiveYearLoaded(year);
-        var layer = archiveLayersByYear[year][cls];
+        var layer = archiveLayersByYear[year][cat];
         if(el.checked) map.addLayer(layer); else map.removeLayer(layer);
       });
     });
@@ -3988,17 +4018,18 @@
     archiveDataByYear[year] = items;
 
     var layers = {};
-    Object.keys(CLASSIFICATIONS).forEach(function(cls){ layers[cls] = L.layerGroup(); });
+    Object.keys(ARCHIVE_CATS).forEach(function(cat){ layers[cat] = L.layerGroup(); });
     items.forEach(function(s){
-      var cls = getClassification(s);
-      if(!layers[cls] || typeof s.lat !== 'number' || typeof s.lon !== 'number') return;
-      var color = archiveMarkerColor(cls);
+      if(getErreur(s)) return;
+      var cat = signalCategoryFor(s);
+      if(!layers[cat] || typeof s.lat !== 'number' || typeof s.lon !== 'number') return;
+      var color = ARCHIVE_CATS[cat].color;
       var marker = L.circleMarker([s.lat, s.lon], {
         radius: 6, color: color, fillColor: color, fillOpacity: 0.55, weight: 2, opacity: 0.85
       });
       var qty = s.quantity ? (QTY_LABELS[s.quantity] || s.quantity) : 'quantité non renseignée';
       marker.bindPopup('<b>' + (s.name || 'Signalement') + '</b><br>' + (s.date || '') + '<br>' + qty);
-      marker.addTo(layers[cls]);
+      marker.addTo(layers[cat]);
     });
     archiveLayersByYear[year] = layers;
   }
@@ -4984,6 +5015,25 @@
     icon.textContent = collapsed ? '▸' : '▾';
   });
 
+  // Dossiers repliables génériques de la légende (Routes / Signalements /
+  // Archive, et les années à l'intérieur d'Archive) — un seul mécanisme
+  // réutilisable plutôt qu'un code dédié pour chaque section.
+  function initLegendFolderToggles(root){
+    (root || document).querySelectorAll('[data-folder-toggle]').forEach(function(header){
+      if(header._folderWired) return; // évite de câbler deux fois le même élément
+      header._folderWired = true;
+      header.addEventListener('click', function(){
+        var key = header.getAttribute('data-folder-toggle');
+        var body = (root || document).querySelector('[data-folder-body="' + key + '"]');
+        var icon = (root || document).querySelector('[data-folder-icon="' + key + '"]');
+        if(!body) return;
+        var isHidden = body.classList.toggle('hidden');
+        if(icon) icon.textContent = isHidden ? '▸' : '▾';
+      });
+    });
+  }
+  initLegendFolderToggles();
+
   document.getElementById('chkRoadsRC').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerRC); } else { map.removeLayer(roadsLayerRC); }
     savePreferences();
@@ -4992,24 +5042,12 @@
     if(e.target.checked){ map.addLayer(roadsLayerRD); } else { map.removeLayer(roadsLayerRD); }
     savePreferences();
   });
-  document.getElementById('chkRoadsRN').addEventListener('change', function(e){
-    if(e.target.checked){ map.addLayer(roadsLayerRN); } else { map.removeLayer(roadsLayerRN); }
-    savePreferences();
-  });
-  document.getElementById('chkRoadsPath').addEventListener('change', function(e){
-    if(e.target.checked){ map.addLayer(roadsLayerPath); } else { map.removeLayer(roadsLayerPath); }
-    savePreferences();
-  });
   document.getElementById('chkRoadsCheminRural').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerCheminRural); } else { map.removeLayer(roadsLayerCheminRural); }
     savePreferences();
   });
   document.getElementById('chkRoadsCheminCommunal').addEventListener('change', function(e){
     if(e.target.checked){ map.addLayer(roadsLayerCheminCommunal); } else { map.removeLayer(roadsLayerCheminCommunal); }
-    savePreferences();
-  });
-  document.getElementById('chkRoadsCheminPrive').addEventListener('change', function(e){
-    if(e.target.checked){ map.addLayer(roadsLayerCheminPrive); } else { map.removeLayer(roadsLayerCheminPrive); }
     savePreferences();
   });
 
