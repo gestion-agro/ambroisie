@@ -123,7 +123,14 @@
   #legend #legendBody{display:block;}
   #legendBody > div{display:flex;align-items:center;gap:6px;}
   #legend #legendBody.collapsed{display:none;}
-  [data-folder-body].hidden{display:none;}
+  /* !important nécessaire : les règles génériques #legend div{display:flex}
+     et #legendBody > div{display:flex} (basées sur un ID, donc prioritaires)
+     s'appliquaient à tort aux conteneurs de dossier, qui doivent empiler
+     leur contenu verticalement (en-tête puis corps, puis chaque ligne les
+     unes sous les autres) plutôt que tout aligner en rangée horizontale. */
+  #legend .legend-folder{display:block!important;}
+  #legend [data-folder-body]{display:block!important;}
+  [data-folder-body].hidden{display:none!important;}
 
   /* ---- loading overlay ---- */
   #loading{
@@ -448,7 +455,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-y</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-z</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
