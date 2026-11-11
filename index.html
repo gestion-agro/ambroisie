@@ -106,8 +106,17 @@
   #legend{
     position:fixed;right:12px;top:72px;z-index:1000;
     width:min(270px, calc(100vw - 24px));
-    max-height:calc(100vh - 160px);
+    /* 100vh sur iOS inclut la zone derrière les barres du navigateur : la
+       hauteur réelle visible est plus petite, donc le bas de la légende
+       restait hors d'atteinte même avec le défilement. dvh = hauteur
+       réellement visible (repli sur vh pour les navigateurs plus anciens). */
+    max-height:calc(100vh - 210px);
+    max-height:calc(100dvh - 210px);
     overflow-y:auto;
+    overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    touch-action:pan-y;
     background:var(--panel);
     border:2px solid var(--ink);
     border-radius:10px;
@@ -130,7 +139,10 @@
      unes sous les autres) plutôt que tout aligner en rangée horizontale. */
   #legend .legend-folder{display:block!important;}
   #legend [data-folder-body]{display:block!important;}
-  [data-folder-body].hidden{display:none!important;}
+  /* Le sélecteur doit être au moins aussi spécifique (ID + attribut + classe)
+     que la règle d'affichage ci-dessus, sinon "display:block!important"
+     l'emporte toujours et les dossiers ne se replient jamais. */
+  #legend [data-folder-body].hidden{display:none!important;}
 
   /* ---- loading overlay ---- */
   #loading{
@@ -455,7 +467,7 @@
 <div id="map"></div>
 
 <div id="topbar">
-  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-z</small></div>
+  <div class="title">Inspection Ambroisie<small>Belsentes · 07165 · v2026-08-19-ab</small></div>
   <div id="status" class="wait"><span class="dot"></span><span id="statusText">Recherche GPS…</span></div>
 </div>
 
@@ -519,6 +531,7 @@
     </div>
 
     <div style="margin-top:6px;"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:100%;box-sizing:border-box;"><input type="checkbox" id="chkHeatmap" style="margin:0;"> <span class="sw" style="background:radial-gradient(circle, #c0392b, #f4d03f, transparent);border-radius:50%;width:12px;height:12px;"></span> <span style="flex:1;">🔥 Zones à cibler (historique)</span></label></div>
+    <div style="font-size:10px;color:var(--muted);line-height:1.3;padding-left:22px;">Pondéré par nombre de plants et signalements proches ; traité compte moins ; Département = non traité ; routes non parcourues en faible intensité.</div>
 
     <div class="legend-folder" style="margin-top:6px;">
       <div class="legend-folder-header" data-folder-toggle="archive" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;padding:4px 0;">
@@ -720,6 +733,8 @@
         <h3 style="font-size:14px;color:var(--danger);">🗓️ Clôturer la saison</h3>
         <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Archive tous les signalements actuels sous l'année en cours (consultables ensuite dans la légende, année par année), puis vide la liste active pour repartir à zéro la saison prochaine. À faire uniquement en fin de campagne.</p>
         <button class="btn" id="btnCloseSeason" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Clôturer la saison</button>
+        <p style="font-size:12px;color:var(--muted);margin-top:10px;">La clôture archive aussi les routes parcourues et les remet à zéro. Ce bouton fait uniquement la partie routes (utile pour une saison déjà clôturée avant l'ajout de cette fonction).</p>
+        <button class="btn" id="btnResetRoadsSeason" style="width:100%;background:#f6dedb;border-color:var(--danger);color:var(--danger);">Archiver et remettre les routes à zéro</button>
       </div>
     </div>
     <div class="loginErr" id="accountErr"></div>
@@ -3620,6 +3635,7 @@
   });
 
   document.getElementById('btnCloseSeason').addEventListener('click', closeSeason);
+  document.getElementById('btnResetRoadsSeason').addEventListener('click', resetRoadsForNewSeason);
   document.getElementById('btnResetRoadClassification').addEventListener('click', async function(){
     var ok = await customConfirm(
       'Ceci efface les noms, classifications (RC/RD/RN/privé) et formes de routes mémorisés — à cause d\'un bug de migration passé, elles sont toutes tombées en "Communale". Les routes déjà marquées "parcourues" gardent leur statut, elles seront juste re-nommées/reclassées au prochain chargement depuis la BD TOPO. Continuer ?',
@@ -3856,6 +3872,110 @@
 
   function archiveUrl(year){ return CONFIG.WORKER_URL.replace('/signalements', '/archive') + '?year=' + year; }
   function archiveIndexUrl(){ return CONFIG.WORKER_URL.replace('/signalements', '/archive-index'); }
+  // L'état "parcourue / non parcourue" des routes est rangé dans le même
+  // système d'archive que les signalements (route /archive du Worker, déjà
+  // déployée), dans un fichier distinct : l'année + 7000 (ex. 2026 -> 9026,
+  // fichier archive-9026.json). Le Worker n'accepte que 4 chiffres pour
+  // l'année, et une année réelle ne peut pas atteindre 9026 : aucune
+  // confusion possible avec les archives de signalements, et l'index des
+  // années (archive-index.json) n'est pas touché.
+  var ROADS_ARCHIVE_YEAR_OFFSET = 7000;
+  function archiveRoadsUrl(year){ return archiveUrl(year + ROADS_ARCHIVE_YEAR_OFFSET); }
+
+  // Routes dont le suivi "parcourue / non parcourue" a un sens : communales,
+  // départementales et nationales, non masquées (les chemins n'apparaissent
+  // pas dans la liste de suivi, donc ne sont jamais "à parcourir").
+  function trackedRoadKeys(){
+    return Object.keys(roadsIndex).filter(function(key){
+      var e = roadsIndex[key];
+      if(roadCoverage[key] && roadCoverage[key].hidden) return false;
+      return e.roadClass === 'RC' || e.roadClass === 'RD' || e.roadClass === 'RN';
+    });
+  }
+
+  // Fin de saison côté routes : mémorise (une fois, sans jamais écraser une
+  // archive existante) quelles routes ont été parcourues cette année-là, puis
+  // remet toutes les routes à "non parcourue" pour la saison suivante. Les
+  // noms, classifications et tracés personnalisés ne sont pas touchés.
+  // Retourne { alreadyArchived, total, covered, reset }.
+  async function archiveAndResetRoads(year, forceReset){
+    if(!Object.keys(roadsIndex).length) throw new Error('les routes ne sont pas encore chargées sur la carte');
+    var getResp = await fetch(archiveRoadsUrl(year), { headers: authHeaders() });
+    if(!getResp.ok) throw new Error('HTTP ' + getResp.status + ' (lecture archive des routes)');
+    var existing = await getResp.json();
+    var result = { alreadyArchived: false, total: 0, covered: 0, reset: 0 };
+
+    if((existing.items || []).length){
+      result.alreadyArchived = true;
+      if(!forceReset) return result; // ne rien toucher sans demande explicite
+    } else {
+      var items = trackedRoadKeys().map(function(key){
+        return { key: key, label: roadsIndex[key].label || key, covered: isRoadCovered(key) };
+      });
+      var putResp = await fetch(archiveRoadsUrl(year), {
+        method: 'PUT',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: items, sha: existing.sha || null })
+      });
+      if(!putResp.ok) throw new Error('HTTP ' + putResp.status + ' (écriture archive des routes)');
+      result.total = items.length;
+      result.covered = items.filter(function(it){ return it.covered; }).length;
+      archiveRoadsByYear[year] = items; // déjà en mémoire pour le dégradé
+    }
+
+    Object.keys(roadCoverage).forEach(function(key){
+      var e = roadCoverage[key];
+      if(e.covered){ e.covered = false; e.by = null; e.at = null; result.reset++; }
+    });
+    applyRoadCoverageStyling();
+    await saveRoadCoverage();
+    return result;
+  }
+
+  async function resetRoadsForNewSeason(){
+    if(currentRole !== 'admin') return;
+    var year = new Date().getFullYear();
+    var yearChoice = prompt('Année de la saison dont on archive les routes parcourues :', String(year));
+    if(yearChoice === null) return;
+    year = parseInt(yearChoice, 10);
+    if(!year || year < 2020 || year > 2100){ await customAlert('Année invalide.'); return; }
+
+    var covered = trackedRoadKeys().filter(isRoadCovered).length;
+    var ok = await showModal({
+      title: 'Remettre les routes à zéro ?',
+      message: covered + ' route(s) actuellement "parcourue(s)" seront mémorisées sous "' + year + '", puis toutes les routes repasseront à "non parcourue" pour la nouvelle saison. Les noms, classifications et tracés ne changent pas.',
+      buttons: [
+        { label: 'Annuler', value: null },
+        { label: 'Archiver et remettre à zéro', value: true, danger: true }
+      ]
+    });
+    if(!ok) return;
+
+    showSync('Archivage des routes…');
+    try{
+      var res = await archiveAndResetRoads(year, false);
+      if(res.alreadyArchived){
+        hideSync();
+        var force = await showModal({
+          title: 'Routes ' + year + ' déjà archivées',
+          message: 'Les routes de ' + year + ' ont déjà été archivées, l\'archive n\'est donc pas réécrite. Voulez-vous seulement remettre les routes actuelles à "non parcourue" ?',
+          buttons: [
+            { label: 'Annuler', value: null },
+            { label: 'Remettre à zéro quand même', value: true, danger: true }
+          ]
+        });
+        if(!force) return;
+        showSync('Remise à zéro…');
+        res = await archiveAndResetRoads(year, true);
+      }
+      hideSync();
+      renderRoadCoverageList('');
+      await customAlert('Routes remises à zéro (' + res.reset + ' route(s) parcourue(s) effacée(s)).' + (res.total ? ' Archive ' + year + ' : ' + res.covered + ' parcourue(s) sur ' + res.total + '.' : ''));
+    } catch(err){
+      hideSync();
+      await customAlert('Erreur : ' + String(err.message || err) + '. Réessayez.');
+    }
+  }
 
   async function closeSeason(){
     if(currentRole !== 'admin') return;
@@ -3867,7 +3987,7 @@
 
     var confirmed = await showModal({
       title: 'Clôturer la saison ' + year + ' ?',
-      message: signalements.length + ' signalement(s) actuel(s) seront archivés sous "' + year + '", puis la liste active sera vidée pour repartir à zéro. Cette action est réversible en cas d\'erreur (les données archivées restent consultables), mais à faire uniquement en fin de saison.',
+      message: signalements.length + ' signalement(s) actuel(s) seront archivés sous "' + year + '", et les routes "parcourues" seront mémorisées puis remises à zéro. La liste active repart ensuite à zéro. Les données archivées restent consultables, mais à faire uniquement en fin de saison.',
       buttons: [
         { label: 'Annuler', value: null },
         { label: 'Clôturer la saison ' + year, value: true, danger: true }
@@ -3909,12 +4029,17 @@
       });
       if(!idxPut.ok) throw new Error('HTTP ' + idxPut.status + ' (écriture index)');
 
-      // 4) Vide la liste active — la saison suivante repart de zéro.
+      // 4) Routes : mémorise celles parcourues cette année, puis remise à zéro
+      //    (avant de vider la liste active : en cas d'échec ici, rien n'est perdu).
+      var roadsRes = await archiveAndResetRoads(year, true);
+      if(typeof renderRoadCoverageList === 'function') renderRoadCoverageList('');
+
+      // 5) Vide la liste active — la saison suivante repart de zéro.
       signalements = [];
       await saveSignalements();
 
       hideSync();
-      await customAlert('Saison ' + year + ' archivée (' + merged.length + ' signalement(s) au total pour cette année). La liste active est maintenant vide.');
+      await customAlert('Saison ' + year + ' archivée (' + merged.length + ' signalement(s) au total pour cette année). ' + roadsRes.reset + ' route(s) parcourue(s) remise(s) à zéro. La liste active est maintenant vide.');
       renderSignalMarkers();
       renderList();
       loadArchiveIndex(); // rafraîchit la liste des années disponibles (nouvelle année ajoutée)
@@ -4048,7 +4173,62 @@
   // repérer d'un coup d'œil les secteurs les plus touchés et cibler en
   // priorité la prochaine campagne.
   var heatLayer = null;
-  var QTY_WEIGHT = { '<10': 0.3, '10-50': 0.6, '50-500': 0.85, '>500': 1 };
+
+  // Pondération du calque "Zones à cibler" — tous les réglages sont ici.
+  var QTY_WEIGHT = { '<10': 0.25, '10-50': 0.6, '50-500': 1.1, '>500': 1.8 };
+  var QTY_WEIGHT_DEFAULT = 0.5;      // quantité non renseignée
+  var TREATED_FACTOR = 0.4;          // un signalement traité compte moins (moins de graines produites)
+  var UNVISITED_ROAD_WEIGHT = 0.08;  // route non parcourue : on ne sait pas s'il y a de l'ambroisie
+  var UNVISITED_SAMPLE_STEP_M = 80;  // un point tous les 80 m le long d'une route non parcourue
+  var HEAT_MAX = 2.5;                // intensité cumulée qui correspond au rouge maximal
+
+  // Poids d'un signalement : nombre de plants estimé, réduit s'il a été traité.
+  // "Département" est traité comme non traité (on ne sait pas si le département
+  // est réellement intervenu). Plusieurs signalements proches s'additionnent
+  // naturellement dans le dégradé : c'est ce qui fait ressortir un secteur.
+  function signalHeatWeight(s){
+    var w = QTY_WEIGHT[s.quantity];
+    if(w === undefined) w = QTY_WEIGHT_DEFAULT;
+    var treated = getTraite(s) && getClassification(s) !== 'departement';
+    return treated ? w * TREATED_FACTOR : w;
+  }
+
+  function sampleLineEvery(latlngs, stepM){
+    var out = [];
+    if(!latlngs || !latlngs.length) return out;
+    out.push(latlngs[0]);
+    var acc = 0;
+    for(var i = 1; i < latlngs.length; i++){
+      acc += haversineMeters(latlngs[i-1][0], latlngs[i-1][1], latlngs[i][0], latlngs[i][1]);
+      if(acc >= stepM){ out.push(latlngs[i]); acc = 0; }
+    }
+    return out;
+  }
+
+  // Points (faible poids) le long des routes qui n'ont pas été parcourues :
+  // on ne sait pas s'il y avait de l'ambroisie, donc elles restent à surveiller.
+  function unvisitedRoadPoints(keys){
+    var pts = [];
+    keys.forEach(function(key){
+      var entry = roadsIndex[key];
+      if(!entry) return;
+      (entry.latlngsList || []).forEach(function(line){
+        sampleLineEvery(line, UNVISITED_SAMPLE_STEP_M).forEach(function(p){
+          pts.push([p[0], p[1], UNVISITED_ROAD_WEIGHT]);
+        });
+      });
+    });
+    return pts;
+  }
+
+  var archiveRoadsByYear = {}; // année -> [{ key, label, covered }]
+  async function ensureArchiveRoadsLoaded(year){
+    if(archiveRoadsByYear[year]) return;
+    var r = await fetch(archiveRoadsUrl(year), { headers: authHeaders() });
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    var data = await r.json();
+    archiveRoadsByYear[year] = data.items || [];
+  }
 
   // La librairie leaflet.heat n'est chargée qu'au moment où le calque est
   // réellement demandé pour la première fois — pas au démarrage de l'appli,
@@ -4083,20 +4263,43 @@
       try{ await ensureArchiveYearLoaded(allYears[i]); } catch(e){ /* une année indisponible n'empêche pas les autres */ }
     }
     var points = [];
+    // 1) Signalements confirmés (saison en cours + années archivées), pondérés.
     signalements.filter(isConfirmedSignalement).forEach(function(s){
       if(typeof s.lat === 'number' && typeof s.lon === 'number'){
-        points.push([s.lat, s.lon, QTY_WEIGHT[s.quantity] || 0.4]);
+        points.push([s.lat, s.lon, signalHeatWeight(s)]);
       }
     });
     allYears.forEach(function(year){
       (archiveDataByYear[year] || []).filter(isConfirmedSignalement).forEach(function(s){
         if(typeof s.lat === 'number' && typeof s.lon === 'number'){
-          points.push([s.lat, s.lon, QTY_WEIGHT[s.quantity] || 0.4]);
+          points.push([s.lat, s.lon, signalHeatWeight(s)]);
         }
       });
     });
+
+    // 2) Routes non parcourues, saison par saison.
+    var tracked = trackedRoadKeys();
+    for(var j = 0; j < allYears.length; j++){
+      var yr = allYears[j];
+      try{ await ensureArchiveRoadsLoaded(yr); } catch(e){ continue; }
+      var archived = archiveRoadsByYear[yr] || [];
+      if(!archived.length) continue; // pas de données de routes pour cette année-là
+      var wasCovered = {};
+      archived.forEach(function(it){ wasCovered[it.key] = !!it.covered; });
+      // une route absente de l'archive (créée depuis) n'est pas comptée
+      var notVisited = tracked.filter(function(key){ return wasCovered[key] === false; });
+      unvisitedRoadPoints(notVisited).forEach(function(pt){ points.push(pt); });
+    }
+    // Saison en cours : seulement si elle a commencé (au moins un signalement
+    // ou une route parcourue), sinon toutes les routes sembleraient "non
+    // parcourues" simplement parce que la saison n'a pas démarré.
+    var seasonStarted = signalements.length > 0 || tracked.some(isRoadCovered);
+    if(seasonStarted){
+      unvisitedRoadPoints(tracked.filter(function(key){ return !isRoadCovered(key); })).forEach(function(pt){ points.push(pt); });
+    }
+
     if(heatLayer) map.removeLayer(heatLayer);
-    heatLayer = L.heatLayer(points, { radius: 35, blur: 25, maxZoom: 17, minOpacity: 0.35 });
+    heatLayer = L.heatLayer(points, { radius: 30, blur: 25, maxZoom: 17, max: HEAT_MAX, minOpacity: 0.25 });
     return heatLayer;
   }
 
